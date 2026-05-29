@@ -5,51 +5,31 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "project_name",
-  "developer",
-  "location",
-  "status"
+  "developer_name",
+  "company_registration"
  ],
  "fields": [
   {
-   "fieldname": "project_name",
+   "fieldname": "developer_name",
    "fieldtype": "Data",
    "in_list_view": 1,
    "in_standard_filter": 1,
-   "label": "Project Name",
+   "label": "Developer Name",
    "reqd": 1,
    "unique": 1
   },
   {
-   "fieldname": "developer",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Developer",
-   "options": "Property Developer",
-   "reqd": 1
-  },
-  {
-   "fieldname": "location",
+   "fieldname": "company_registration",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Location"
-  },
-  {
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Status",
-   "options": "Planning\nLaunched\nUnder Construction\nDelivered",
-   "default": "Planning"
+   "label": "Company Registration"
   }
  ],
  "links": [],
  "modified": "2026-05-29 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Real Estate CRM Customs",
- "name": "Real Estate Project",
+ "name": "Property Developer",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
@@ -102,5 +82,5 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "autoname": "field:project_name"
+ "autoname": "field:developer_name"
 }

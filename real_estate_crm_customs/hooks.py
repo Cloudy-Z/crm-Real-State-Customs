@@ -12,7 +12,8 @@ after_migrate = "real_estate_crm_customs.install.after_migrate"
 
 doc_events = {
     "Real Estate Unit": {
-        "validate": "real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit.validate_resale_owner"
+        "before_insert": "real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit.before_insert_generate_sku",
+        "validate": "real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit.validate_resale_owner",
     }
 }
 

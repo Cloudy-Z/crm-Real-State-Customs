@@ -37,49 +37,15 @@ CRM_LEAD_CUSTOM_FIELDS = {
 LEAD_REAL_ESTATE_LAYOUT_FIELDS = ["party_type", "interested_in_units"]
 
 REAL_ESTATE_FIELD_LAYOUTS = {
-    "Real Estate Unit-Quick Entry": {
-        "doctype": "Real Estate Unit",
+    "Property Developer-Quick Entry": {
+        "doctype": "Property Developer",
         "type": "Quick Entry",
         "layout": [
             {
-                "name": "unit_section",
+                "name": "developer_section",
                 "columns": [
-                    {"name": "column_unit_a", "fields": ["project", "unit_number"]},
-                    {"name": "column_unit_b", "fields": ["unit_type", "status"]},
-                    {"name": "column_unit_c", "fields": ["price", "owner_lead"]},
-                ],
-            }
-        ],
-    },
-    "Real Estate Unit-Side Panel": {
-        "doctype": "Real Estate Unit",
-        "type": "Side Panel",
-        "layout": [
-            {
-                "label": "Unit Details",
-                "name": "unit_details_section",
-                "opened": True,
-                "columns": [
-                    {
-                        "name": "column_unit_details",
-                        "fields": ["project", "unit_number", "unit_type", "status", "price", "owner_lead"],
-                    }
-                ],
-            }
-        ],
-    },
-    "Real Estate Unit-Data Fields": {
-        "doctype": "Real Estate Unit",
-        "type": "Data Fields",
-        "layout": [
-            {
-                "label": "Unit Details",
-                "name": "unit_details_section",
-                "opened": True,
-                "columns": [
-                    {"name": "column_unit_data_a", "fields": ["project", "unit_number"]},
-                    {"name": "column_unit_data_b", "fields": ["unit_type", "status"]},
-                    {"name": "column_unit_data_c", "fields": ["price", "owner_lead"]},
+                    {"name": "column_developer_a", "fields": ["developer_name"]},
+                    {"name": "column_developer_b", "fields": ["company_registration"]},
                 ],
             }
         ],
@@ -97,6 +63,63 @@ REAL_ESTATE_FIELD_LAYOUTS = {
             }
         ],
     },
+    "Real Estate Unit-Quick Entry": {
+        "doctype": "Real Estate Unit",
+        "type": "Quick Entry",
+        "layout": [
+            {
+                "name": "unit_section",
+                "columns": [
+                    {"name": "column_unit_a", "fields": ["project", "developer", "sku"]},
+                    {"name": "column_unit_b", "fields": ["unit_type", "floor", "status"]},
+                    {"name": "column_unit_c", "fields": ["finishing_type", "price", "owner_lead"]},
+                ],
+            }
+        ],
+    },
+    "Real Estate Unit-Side Panel": {
+        "doctype": "Real Estate Unit",
+        "type": "Side Panel",
+        "layout": [
+            {
+                "label": "Inventory Details",
+                "name": "unit_details_section",
+                "opened": True,
+                "columns": [
+                    {
+                        "name": "column_unit_details",
+                        "fields": [
+                            "sku",
+                            "project",
+                            "developer",
+                            "unit_type",
+                            "floor",
+                            "finishing_type",
+                            "status",
+                            "price",
+                            "owner_lead",
+                        ],
+                    }
+                ],
+            }
+        ],
+    },
+    "Real Estate Unit-Data Fields": {
+        "doctype": "Real Estate Unit",
+        "type": "Data Fields",
+        "layout": [
+            {
+                "label": "Inventory Details",
+                "name": "unit_details_section",
+                "opened": True,
+                "columns": [
+                    {"name": "column_unit_data_a", "fields": ["sku", "project", "developer"]},
+                    {"name": "column_unit_data_b", "fields": ["unit_type", "floor", "finishing_type"]},
+                    {"name": "column_unit_data_c", "fields": ["status", "price", "owner_lead"]},
+                ],
+            }
+        ],
+    },
     "Real Estate Project-Side Panel": {
         "doctype": "Real Estate Project",
         "type": "Side Panel",
@@ -106,7 +129,7 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "name": "project_details_section",
                 "opened": True,
                 "columns": [
-                    {"name": "column_project_details", "fields": ["project_name", "location", "developer", "status"]}
+                    {"name": "column_project_details", "fields": ["project_name", "developer", "location", "status"]}
                 ],
             }
         ],
@@ -120,8 +143,8 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "name": "project_details_section",
                 "opened": True,
                 "columns": [
-                    {"name": "column_project_data_a", "fields": ["project_name", "location"]},
-                    {"name": "column_project_data_b", "fields": ["developer", "status"]},
+                    {"name": "column_project_data_a", "fields": ["project_name", "developer"]},
+                    {"name": "column_project_data_b", "fields": ["location", "status"]},
                 ],
             }
         ],
@@ -130,20 +153,16 @@ REAL_ESTATE_FIELD_LAYOUTS = {
 
 REAL_ESTATE_STANDARD_VIEWS = [
     {
-        "label": "Real Estate Units",
-        "dt": "Real Estate Unit",
-        "route_name": "Real Estate Units",
-        "icon": "home",
+        "label": "Property Developers",
+        "dt": "Property Developer",
+        "route_name": "Property Developers",
+        "icon": "building",
         "columns": [
-            {"label": "Unit Number", "type": "Data", "key": "unit_number", "width": "12rem"},
-            {"label": "Project", "type": "Link", "key": "project", "width": "14rem"},
-            {"label": "Unit Type", "type": "Select", "key": "unit_type", "width": "10rem"},
-            {"label": "Status", "type": "Select", "key": "status", "width": "10rem"},
-            {"label": "Price", "type": "Currency", "key": "price", "width": "10rem"},
-            {"label": "Owner Lead", "type": "Link", "key": "owner_lead", "width": "14rem"},
+            {"label": "Developer Name", "type": "Data", "key": "developer_name", "width": "16rem"},
+            {"label": "Company Registration", "type": "Data", "key": "company_registration", "width": "16rem"},
             {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
         ],
-        "rows": ["name", "unit_number", "project", "unit_type", "status", "price", "owner_lead", "modified"],
+        "rows": ["name", "developer_name", "company_registration", "modified"],
     },
     {
         "label": "Real Estate Projects",
@@ -152,19 +171,51 @@ REAL_ESTATE_STANDARD_VIEWS = [
         "icon": "building-2",
         "columns": [
             {"label": "Project Name", "type": "Data", "key": "project_name", "width": "14rem"},
+            {"label": "Developer", "type": "Link", "key": "developer", "width": "14rem"},
             {"label": "Location", "type": "Data", "key": "location", "width": "14rem"},
-            {"label": "Developer", "type": "Data", "key": "developer", "width": "14rem"},
             {"label": "Status", "type": "Select", "key": "status", "width": "10rem"},
             {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
         ],
-        "rows": ["name", "project_name", "location", "developer", "status", "modified"],
+        "rows": ["name", "project_name", "developer", "location", "status", "modified"],
+    },
+    {
+        "label": "Real Estate Units",
+        "dt": "Real Estate Unit",
+        "route_name": "Real Estate Units",
+        "icon": "home",
+        "columns": [
+            {"label": "SKU", "type": "Data", "key": "sku", "width": "12rem"},
+            {"label": "Project", "type": "Link", "key": "project", "width": "14rem"},
+            {"label": "Developer", "type": "Link", "key": "developer", "width": "14rem"},
+            {"label": "Unit Type", "type": "Select", "key": "unit_type", "width": "10rem"},
+            {"label": "Floor", "type": "Int", "key": "floor", "width": "7rem"},
+            {"label": "Finishing", "type": "Select", "key": "finishing_type", "width": "12rem"},
+            {"label": "Status", "type": "Select", "key": "status", "width": "10rem"},
+            {"label": "Price", "type": "Currency", "key": "price", "width": "10rem"},
+            {"label": "Owner Lead", "type": "Link", "key": "owner_lead", "width": "14rem"},
+            {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
+        ],
+        "rows": [
+            "name",
+            "sku",
+            "project",
+            "developer",
+            "unit_type",
+            "floor",
+            "finishing_type",
+            "status",
+            "price",
+            "owner_lead",
+            "modified",
+        ],
     },
 ]
 
 REAL_ESTATE_QUICK_FILTERS = {
     "CRM Lead": ["lead_name", "email", "organization", "status", "source", "party_type", "lead_owner"],
-    "Real Estate Unit": ["project", "unit_number", "unit_type", "status", "owner_lead"],
-    "Real Estate Project": ["project_name", "location", "developer", "status"],
+    "Real Estate Unit": ["sku", "project", "developer", "unit_type", "floor", "finishing_type", "status", "owner_lead"],
+    "Property Developer": ["developer_name", "company_registration"],
+    "Real Estate Project": ["project_name", "developer", "location", "status"],
 }
 
 
@@ -179,6 +230,8 @@ def after_migrate():
 def sync_real_estate_crm_defaults():
     ensure_module_def()
     setup_crm_lead_custom_fields()
+    enforce_crm_lead_phone_mandatory()
+    setup_real_estate_client_scripts()
     setup_crm_portal_defaults()
     frappe.db.commit()
 
@@ -202,6 +255,145 @@ def setup_crm_lead_custom_fields():
 
     create_custom_fields(CRM_LEAD_CUSTOM_FIELDS, update=True)
     frappe.clear_cache(doctype="CRM Lead")
+
+
+def enforce_crm_lead_phone_mandatory():
+    """Make CRM Lead phone/mobile mandatory without editing the upstream CRM DocType JSON."""
+    for fieldname in ("mobile_no", "phone"):
+        if frappe.db.exists("DocField", {"parent": "CRM Lead", "fieldname": fieldname}):
+            make_property_setter(
+                "CRM Lead",
+                fieldname,
+                "reqd",
+                "1",
+                "Check",
+            )
+
+
+def make_property_setter(doc_type, field_name, property_name, value, property_type):
+    filters = {
+        "doc_type": doc_type,
+        "field_name": field_name,
+        "property": property_name,
+    }
+    if frappe.db.exists("Property Setter", filters):
+        doc = frappe.get_doc("Property Setter", filters)
+    else:
+        doc = frappe.new_doc("Property Setter")
+        doc.doc_type = doc_type
+        doc.field_name = field_name
+        doc.doctype_or_field = "DocField"
+        doc.property = property_name
+    doc.value = value
+    doc.property_type = property_type
+    doc.save(ignore_permissions=True)
+
+
+def setup_real_estate_client_scripts():
+    if not frappe.db.exists("DocType", "Client Script"):
+        return
+    ensure_client_script("Real Estate Unit Defaults", "Real Estate Unit", REAL_ESTATE_UNIT_DEFAULTS_SCRIPT)
+    ensure_client_script("CRM Lead Real Estate Validation and Unit Assignment", "CRM Lead", CRM_LEAD_PHONE_AND_ASSIGN_SCRIPT)
+
+
+def ensure_client_script(script_name, dt, script):
+    if frappe.db.exists("Client Script", script_name):
+        doc = frappe.get_doc("Client Script", script_name)
+    else:
+        doc = frappe.new_doc("Client Script")
+        doc.name = script_name
+        doc.dt = dt
+    doc.enabled = 1
+    doc.script = script
+    doc.save(ignore_permissions=True)
+
+
+REAL_ESTATE_UNIT_DEFAULTS_SCRIPT = r"""
+frappe.ui.form.on('Real Estate Unit', {
+    setup(frm) {
+        frm.set_query('project', () => ({ filters: {} }));
+    },
+    onload(frm) {
+        if (frm.is_new()) {
+            if (!frm.doc.status) {
+                frm.set_value('status', 'Available');
+            }
+            if (!frm.doc.created_by && frappe.session.user) {
+                frm.set_value('created_by', frappe.session.user);
+            }
+        }
+    },
+    refresh(frm) {
+        if (frm.is_new()) {
+            frm.set_df_property('status', 'default', 'Available');
+        }
+    },
+});
+"""
+
+
+CRM_LEAD_PHONE_AND_ASSIGN_SCRIPT = r"""
+frappe.ui.form.on('CRM Lead', {
+    refresh(frm) {
+        ['mobile_no', 'phone'].forEach((fieldname) => {
+            if (frm.fields_dict[fieldname]) {
+                frm.set_df_property(fieldname, 'reqd', 1);
+            }
+        });
+
+        if (!frm.is_new()) {
+            frm.add_custom_button(__('Assign Property Unit'), () => {
+                const dialog = new frappe.ui.Dialog({
+                    title: __('Assign Property Unit'),
+                    fields: [
+                        {
+                            fieldname: 'unit',
+                            fieldtype: 'Link',
+                            label: __('Available Unit'),
+                            options: 'Real Estate Unit',
+                            reqd: 1,
+                            get_query() {
+                                return { filters: { status: 'Available' } };
+                            },
+                        },
+                    ],
+                    primary_action_label: __('Assign'),
+                    primary_action(values) {
+                        const child_field = frm.fields_dict.interested_in_units ? 'interested_in_units' : null;
+                        if (!child_field) {
+                            frappe.msgprint(__('The Interested in Units child table is not available on this Lead. Please run migrate for the real-estate custom app.'));
+                            return;
+                        }
+                        const exists = (frm.doc[child_field] || []).some((row) => row.unit === values.unit);
+                        if (!exists) {
+                            const row = frm.add_child(child_field);
+                            row.unit = values.unit;
+                        }
+                        frm.save().then(() => {
+                            frappe.msgprint(__('Property unit {0} assigned to this lead.', [values.unit]));
+                            dialog.hide();
+                        });
+                    },
+                });
+                dialog.show();
+            }, __('Actions'));
+        }
+    },
+    validate(frm) {
+        const value = (frm.doc.mobile_no || frm.doc.phone || '').trim();
+        const phone_regex = /^\+(?=\d{10,13}$)\d{1,3}\d{7,10}$/;
+        if (!value) {
+            frappe.msgprint(__('Mobile/phone number is mandatory. Please enter it in international format, for example +201001234567.'));
+            frappe.validated = false;
+            return;
+        }
+        if (!phone_regex.test(value)) {
+            frappe.msgprint(__('Invalid mobile/phone format. Use international format with a leading +, a 1-to-3 digit country code, and a 7-to-10 digit local number. The numeric part must contain 10 to 13 digits. Example: +201001234567.'));
+            frappe.validated = false;
+        }
+    },
+});
+"""
 
 
 def setup_crm_portal_defaults():
