@@ -1,0 +1,1 @@
+recursive-include real_estate_crm_customs *.json *.py *.js *.html *.css *.md

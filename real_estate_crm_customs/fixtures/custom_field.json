@@ -1,0 +1,36 @@
+[
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "real_estate_section",
+  "label": "Real Estate",
+  "fieldtype": "Section Break",
+  "insert_after": "lead_owner",
+  "collapsible": 1,
+  "name": "CRM Lead-real_estate_section"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "party_type",
+  "label": "Party Type",
+  "fieldtype": "Select",
+  "options": "Buyer\nSeller",
+  "default": "Buyer",
+  "insert_after": "real_estate_section",
+  "in_list_view": 1,
+  "in_standard_filter": 1,
+  "name": "CRM Lead-party_type"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "interested_in_units",
+  "label": "Interested in Units",
+  "fieldtype": "Table",
+  "options": "Lead Interested Unit",
+  "insert_after": "party_type",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-interested_in_units"
+ }
+]
