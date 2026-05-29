@@ -13,6 +13,9 @@ The app intentionally keeps business entities, validations, fixtures, patches, a
 | Lead Interested Unit | Child table linking buyer leads to units of interest. |
 | CRM Lead custom fields | Adds `party_type` and `interested_in_units` to the existing CRM Lead DocType. |
 
+## Compatibility
+This app is maintained for Frappe Framework v15 and v16, with Frappe CRM installed before this custom app. The package metadata intentionally declares `frappe >=15.0.0,<17.0.0` so Frappe Cloud can resolve it on both supported framework branches.
+
 ## Installation
 
 Install this app after `frappe` and `crm` are installed on the site.

@@ -11,7 +11,7 @@ after_install = "real_estate_crm_customs.install.after_install"
 
 doc_events = {
     "Real Estate Unit": {
-        "validate": "real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit.validate_resale_owner"
+        "validate": "real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit.validate_resale_owner"
     }
 }
 
