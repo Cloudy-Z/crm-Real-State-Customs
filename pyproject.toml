@@ -15,7 +15,7 @@ build-backend = "flit_core.buildapi"
 
 [tool.bench.frappe-dependencies]
 frappe = ">=15.0.0"
-crm = ">=2.0.0"
+crm = ">=2.0.0-dev"
 
 [tool.isort]
 profile = "black"
