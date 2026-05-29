@@ -341,7 +341,7 @@ frappe.ui.form.on('CRM Lead', {
             }
         });
 
-        if (!frm.is_new()) {
+        if (!frm.is_new() && frm.doc.party_type === 'Seller') {
             frm.add_custom_button(__('Assign Property Unit'), () => {
                 const dialog = new frappe.ui.Dialog({
                     title: __('Assign Property Unit'),
@@ -359,19 +359,17 @@ frappe.ui.form.on('CRM Lead', {
                     ],
                     primary_action_label: __('Assign'),
                     primary_action(values) {
-                        const child_field = frm.fields_dict.interested_in_units ? 'interested_in_units' : null;
-                        if (!child_field) {
-                            frappe.msgprint(__('The Interested in Units child table is not available on this Lead. Please run migrate for the real-estate custom app.'));
-                            return;
-                        }
-                        const exists = (frm.doc[child_field] || []).some((row) => row.unit === values.unit);
-                        if (!exists) {
-                            const row = frm.add_child(child_field);
-                            row.unit = values.unit;
-                        }
-                        frm.save().then(() => {
-                            frappe.msgprint(__('Property unit {0} assigned to this lead.', [values.unit]));
-                            dialog.hide();
+                        frappe.call({
+                            method: 'real_estate_crm_customs.api.assign_property_unit_to_seller',
+                            args: {
+                                lead: frm.doc.name,
+                                unit: values.unit,
+                            },
+                            callback() {
+                                frm.reload_doc();
+                                frappe.msgprint(__('Property unit {0} assigned to this seller lead.', [values.unit]));
+                                dialog.hide();
+                            },
                         });
                     },
                 });
@@ -412,7 +410,7 @@ def ensure_lead_layouts_include_real_estate_fields():
         layout_type="Quick Entry",
         section_name="lead_section",
         column_name="column_real_estate_quick_entry",
-        fields=["party_type"],
+        fields=LEAD_REAL_ESTATE_LAYOUT_FIELDS,
     )
     append_fields_to_layout(
         doctype="CRM Lead",
