@@ -8,6 +8,7 @@ app_license = "mit"
 required_apps = ["crm"]
 
 after_install = "real_estate_crm_customs.install.after_install"
+after_migrate = "real_estate_crm_customs.install.after_migrate"
 
 doc_events = {
     "Real Estate Unit": {
