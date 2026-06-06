@@ -15,7 +15,7 @@ CRM_LEAD_CUSTOM_FIELDS = {
         },
         {
             "fieldname": "party_type",
-            "label": "Party Type",
+            "label": "Type",
             "fieldtype": "Select",
             "options": "Buyer\nSeller",
             "default": "Buyer",
@@ -24,17 +24,223 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "in_standard_filter": 1,
         },
         {
+            "fieldname": "interests_summary",
+            "label": "Interests Summary",
+            "fieldtype": "Small Text",
+            "insert_after": "party_type",
+        },
+        {
+            "fieldname": "whatsapp_number",
+            "label": "WhatsApp Number",
+            "fieldtype": "Phone",
+            "insert_after": "interests_summary",
+        },
+        {
+            "fieldname": "job_title",
+            "label": "Job Title",
+            "fieldtype": "Data",
+            "insert_after": "whatsapp_number",
+        },
+        {
+            "fieldname": "selection_tier",
+            "label": "Selection Tier",
+            "fieldtype": "Select",
+            "options": "\nA - Priority\nB - Qualified\nC - Nurture",
+            "insert_after": "job_title",
+        },
+        {
+            "fieldname": "next_event_window",
+            "label": "Next Event Window",
+            "fieldtype": "Datetime",
+            "insert_after": "selection_tier",
+        },
+        {
+            "fieldname": "event_status_lifecycle",
+            "label": "Event Status Lifecycle",
+            "fieldtype": "Select",
+            "options": "\nScheduled\nCompleted\nPostponed\nNo Show",
+            "insert_after": "next_event_window",
+        },
+        {
+            "fieldname": "buyer_requirements_section",
+            "label": "Buyer Requirements and Search Filters",
+            "fieldtype": "Section Break",
+            "insert_after": "event_status_lifecycle",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+            "collapsible": 1,
+        },
+        {
+            "fieldname": "buyer_budget",
+            "label": "Budget",
+            "fieldtype": "Currency",
+            "insert_after": "buyer_requirements_section",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+        },
+        {
+            "fieldname": "interested_unit_area",
+            "label": "Interested Unit Area",
+            "fieldtype": "Float",
+            "insert_after": "buyer_budget",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+        },
+        {
+            "fieldname": "area_unit",
+            "label": "Area Unit",
+            "fieldtype": "Select",
+            "options": "Sq M\nSq Ft",
+            "default": "Sq M",
+            "insert_after": "interested_unit_area",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+        },
+        {
+            "fieldname": "preferred_unit_type",
+            "label": "Unit Type",
+            "fieldtype": "Select",
+            "options": "\nApartment\nDuplex\nTownhouse\nVilla\nChalet\nStudio\nPenthouse",
+            "insert_after": "area_unit",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+        },
+        {
+            "fieldname": "preferred_developer",
+            "label": "Developer",
+            "fieldtype": "Link",
+            "options": "Property Developer",
+            "insert_after": "preferred_unit_type",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+        },
+        {
+            "fieldname": "preferred_compound",
+            "label": "Compound / Project",
+            "fieldtype": "Link",
+            "options": "Real Estate Project",
+            "insert_after": "preferred_developer",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+        },
+        {
             "fieldname": "interested_in_units",
             "label": "Interested in Units",
             "fieldtype": "Table",
             "options": "Lead Interested Unit",
-            "insert_after": "party_type",
+            "insert_after": "preferred_compound",
             "depends_on": "eval:doc.party_type == 'Buyer'",
+        },
+        {
+            "fieldname": "seller_property_section",
+            "label": "Seller Property Onboarding",
+            "fieldtype": "Section Break",
+            "insert_after": "interested_in_units",
+            "depends_on": "eval:doc.party_type == 'Seller'",
+            "collapsible": 1,
+        },
+        {
+            "fieldname": "property_title",
+            "label": "Property Title / Designation",
+            "fieldtype": "Data",
+            "insert_after": "seller_property_section",
+            "depends_on": "eval:doc.party_type == 'Seller'",
+        },
+        {
+            "fieldname": "target_asking_price",
+            "label": "Target Asking Price",
+            "fieldtype": "Currency",
+            "insert_after": "property_title",
+            "depends_on": "eval:doc.party_type == 'Seller'",
+        },
+        {
+            "fieldname": "property_code",
+            "label": "Property Code / Assigned SKU",
+            "fieldtype": "Data",
+            "insert_after": "target_asking_price",
+            "depends_on": "eval:doc.party_type == 'Seller'",
+        },
+        {
+            "fieldname": "location_reference",
+            "label": "Location Reference",
+            "fieldtype": "Data",
+            "insert_after": "property_code",
+            "depends_on": "eval:doc.party_type == 'Seller'",
+        },
+        {
+            "fieldname": "seller_compound",
+            "label": "Compound / Project",
+            "fieldtype": "Link",
+            "options": "Real Estate Project",
+            "insert_after": "location_reference",
+            "depends_on": "eval:doc.party_type == 'Seller'",
+        },
+        {
+            "fieldname": "seller_developer",
+            "label": "Developer",
+            "fieldtype": "Link",
+            "options": "Property Developer",
+            "insert_after": "seller_compound",
+            "depends_on": "eval:doc.party_type == 'Seller'",
+        },
+        {
+            "fieldname": "seller_unit_type",
+            "label": "Unit Type",
+            "fieldtype": "Select",
+            "options": "\nStandalone Villa\nPenthouse\nStudio\nApartment\nDuplex\nTownhouse\nChalet",
+            "insert_after": "seller_developer",
+            "depends_on": "eval:doc.party_type == 'Seller'",
+        },
+        {
+            "fieldname": "unit_area",
+            "label": "Unit Area",
+            "fieldtype": "Float",
+            "insert_after": "seller_unit_type",
+            "depends_on": "eval:doc.party_type == 'Seller'",
+        },
+        {
+            "fieldname": "seller_finishing_type",
+            "label": "Finishing Type",
+            "fieldtype": "Select",
+            "options": "\nCore & Shell\nSemi-Finished\nFully Finished",
+            "insert_after": "unit_area",
+            "depends_on": "eval:doc.party_type == 'Seller'",
+        },
+        {
+            "fieldname": "property_documents",
+            "label": "Property Documents & Deed Upload",
+            "fieldtype": "Attach",
+            "insert_after": "seller_finishing_type",
+            "depends_on": "eval:doc.party_type == 'Seller'",
         },
     ]
 }
 
-LEAD_REAL_ESTATE_LAYOUT_FIELDS = ["party_type", "interested_in_units"]
+LEAD_CONTACT_LAYOUT_FIELDS = [
+    "lead_name",
+    "mobile_no",
+    "phone",
+    "whatsapp_number",
+    "job_title",
+    "selection_tier",
+]
+
+LEAD_EVENT_LAYOUT_FIELDS = ["next_event_window", "event_status_lifecycle"]
+
+LEAD_REAL_ESTATE_LAYOUT_FIELDS = [
+    "party_type",
+    "interests_summary",
+    "buyer_budget",
+    "interested_unit_area",
+    "area_unit",
+    "preferred_unit_type",
+    "preferred_developer",
+    "preferred_compound",
+    "interested_in_units",
+    "property_title",
+    "target_asking_price",
+    "property_code",
+    "location_reference",
+    "seller_compound",
+    "seller_developer",
+    "seller_unit_type",
+    "unit_area",
+    "seller_finishing_type",
+    "property_documents",
+]
 
 REAL_ESTATE_FIELD_LAYOUTS = {
     "Property Developer-Quick Entry": {
@@ -212,7 +418,25 @@ REAL_ESTATE_STANDARD_VIEWS = [
 ]
 
 REAL_ESTATE_QUICK_FILTERS = {
-    "CRM Lead": ["lead_name", "email", "organization", "status", "source", "party_type", "lead_owner"],
+    "CRM Lead": [
+        "lead_name",
+        "email",
+        "organization",
+        "status",
+        "source",
+        "party_type",
+        "lead_owner",
+        "buyer_budget",
+        "preferred_unit_type",
+        "preferred_developer",
+        "preferred_compound",
+        "target_asking_price",
+        "seller_unit_type",
+        "seller_developer",
+        "selection_tier",
+        "next_event_window",
+        "event_status_lifecycle",
+    ],
     "Real Estate Unit": ["sku", "project", "developer", "unit_type", "floor", "finishing_type", "status", "owner_lead"],
     "Property Developer": ["developer_name", "company_registration"],
     "Real Estate Project": ["project_name", "developer", "location", "status"],
@@ -415,10 +639,34 @@ def ensure_lead_layouts_include_real_estate_fields():
     append_fields_to_layout(
         doctype="CRM Lead",
         layout_type="Side Panel",
+        section_name="contact_identity_side_panel_section",
+        section_label="Contact Identity Card",
+        column_name="column_contact_identity_side_panel",
+        fields=LEAD_CONTACT_LAYOUT_FIELDS,
+    )
+    append_fields_to_layout(
+        doctype="CRM Lead",
+        layout_type="Side Panel",
         section_name="real_estate_side_panel_section",
         section_label="Real Estate",
         column_name="column_real_estate_side_panel",
         fields=LEAD_REAL_ESTATE_LAYOUT_FIELDS,
+    )
+    append_fields_to_layout(
+        doctype="CRM Lead",
+        layout_type="Side Panel",
+        section_name="task_execution_side_panel_section",
+        section_label="Task Execution and Milestone Deadlines",
+        column_name="column_task_execution_side_panel",
+        fields=LEAD_EVENT_LAYOUT_FIELDS,
+    )
+    append_fields_to_layout(
+        doctype="CRM Lead",
+        layout_type="Data Fields",
+        section_name="contact_identity_data_fields_section",
+        section_label="Contact Identity Card",
+        column_name="column_contact_identity_data_fields",
+        fields=LEAD_CONTACT_LAYOUT_FIELDS,
     )
     append_fields_to_layout(
         doctype="CRM Lead",
@@ -427,6 +675,14 @@ def ensure_lead_layouts_include_real_estate_fields():
         section_label="Real Estate",
         column_name="column_real_estate_data_fields",
         fields=LEAD_REAL_ESTATE_LAYOUT_FIELDS,
+    )
+    append_fields_to_layout(
+        doctype="CRM Lead",
+        layout_type="Data Fields",
+        section_name="task_execution_data_fields_section",
+        section_label="Task Execution and Milestone Deadlines",
+        column_name="column_task_execution_data_fields",
+        fields=LEAD_EVENT_LAYOUT_FIELDS,
     )
 
 
