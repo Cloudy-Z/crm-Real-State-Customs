@@ -238,6 +238,45 @@ LEAD_REAL_ESTATE_LAYOUT_FIELDS = [
     "property_documents",
 ]
 
+DEFAULT_CRM_LEAD_SIDE_PANEL_LAYOUT = [
+    {
+        "label": "Details",
+        "name": "details_section",
+        "opened": True,
+        "columns": [
+            {
+                "name": "column_kl92",
+                "fields": [
+                    "organization",
+                    "website",
+                    "territory",
+                    "industry",
+                    "job_title",
+                    "source",
+                    "lead_owner",
+                ],
+            }
+        ],
+    },
+    {
+        "label": "Person",
+        "name": "person_section",
+        "opened": True,
+        "columns": [
+            {
+                "name": "column_XmW2",
+                "fields": [
+                    "salutation",
+                    "first_name",
+                    "last_name",
+                    "email",
+                    "mobile_no",
+                ],
+            }
+        ],
+    },
+]
+
 REAL_ESTATE_FIELD_LAYOUTS = {
     "Property Developer-Quick Entry": {
         "doctype": "Property Developer",
@@ -633,7 +672,7 @@ def ensure_lead_layouts_include_real_estate_fields():
         fields=LEAD_REAL_ESTATE_LAYOUT_FIELDS,
     )
     ensure_crm_lead_main_form_sections()
-    remove_crm_lead_custom_side_panel_sections()
+    reset_crm_lead_side_panel_to_default()
 
 
 def ensure_crm_lead_main_form_sections():
@@ -671,24 +710,13 @@ def ensure_crm_lead_main_form_sections():
     )
 
 
-def remove_crm_lead_custom_side_panel_sections():
-    """Undo previously-added Lead sidebar sections while preserving the original sidebar layout."""
+def reset_crm_lead_side_panel_to_default():
+    """Restore the Lead right sidebar to the upstream CRM default layout."""
 
-    layout_name = "CRM Lead-Side Panel"
-    if not frappe.db.exists("CRM Fields Layout", layout_name):
-        return
-
-    layout_doc = frappe.get_doc("CRM Fields Layout", layout_name)
-    layout = parse_layout(layout_doc.layout)
-    section_names_to_remove = {
-        "contact_identity_side_panel_section",
-        "real_estate_side_panel_section",
-        "task_execution_side_panel_section",
-    }
-    cleaned_layout = [section for section in layout if section.get("name") not in section_names_to_remove]
-
-    if len(cleaned_layout) != len(layout):
-        layout_doc.layout = json.dumps(cleaned_layout)
+    layout_doc = get_or_create_fields_layout("CRM Lead", "Side Panel")
+    default_layout = json.dumps(DEFAULT_CRM_LEAD_SIDE_PANEL_LAYOUT)
+    if layout_doc.layout != default_layout:
+        layout_doc.layout = default_layout
         layout_doc.save(ignore_permissions=True)
 
 

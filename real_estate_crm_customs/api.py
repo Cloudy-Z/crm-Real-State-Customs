@@ -96,7 +96,9 @@ def get_lead_linked_units(lead):
         frappe.throw(_("Lead {0} was not found.").format(lead), frappe.DoesNotExistError)
 
     lead_doc = frappe.get_doc("CRM Lead", lead)
-    interested_units = [row.unit for row in lead_doc.get("interested_in_units") or [] if row.unit]
+    interested_rows = [row for row in lead_doc.get("interested_in_units") or [] if row.unit]
+    interested_units = [row.unit for row in interested_rows]
+    proposal_status_by_unit = {row.unit: row.get("proposal_status") for row in interested_rows}
 
     filters = []
     if interested_units:
@@ -140,5 +142,6 @@ def get_lead_linked_units(lead):
             row.relationship = _("Seller Unit")
         else:
             row.relationship = _("Interested Unit")
+        row.proposal_status = proposal_status_by_unit.get(row.name)
 
     return rows
