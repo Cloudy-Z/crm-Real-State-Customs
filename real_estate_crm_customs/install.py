@@ -1,5 +1,7 @@
 import json
 
+import json
+
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
@@ -630,30 +632,13 @@ def ensure_lead_layouts_include_real_estate_fields():
         column_name="column_real_estate_quick_entry",
         fields=LEAD_REAL_ESTATE_LAYOUT_FIELDS,
     )
-    append_fields_to_layout(
-        doctype="CRM Lead",
-        layout_type="Side Panel",
-        section_name="contact_identity_side_panel_section",
-        section_label="Contact Identity Card",
-        column_name="column_contact_identity_side_panel",
-        fields=LEAD_CONTACT_LAYOUT_FIELDS,
-    )
-    append_fields_to_layout(
-        doctype="CRM Lead",
-        layout_type="Side Panel",
-        section_name="real_estate_side_panel_section",
-        section_label="Real Estate",
-        column_name="column_real_estate_side_panel",
-        fields=LEAD_REAL_ESTATE_LAYOUT_FIELDS,
-    )
-    append_fields_to_layout(
-        doctype="CRM Lead",
-        layout_type="Side Panel",
-        section_name="task_execution_side_panel_section",
-        section_label="Task Execution and Milestone Deadlines",
-        column_name="column_task_execution_side_panel",
-        fields=LEAD_EVENT_LAYOUT_FIELDS,
-    )
+    ensure_crm_lead_main_form_sections()
+    remove_crm_lead_custom_side_panel_sections()
+
+
+def ensure_crm_lead_main_form_sections():
+    """Keep the document sections in the main Lead form, not in the right sidebar."""
+
     append_fields_to_layout(
         doctype="CRM Lead",
         layout_type="Data Fields",
@@ -661,14 +646,18 @@ def ensure_lead_layouts_include_real_estate_fields():
         section_label="Contact Identity Card",
         column_name="column_contact_identity_data_fields",
         fields=LEAD_CONTACT_LAYOUT_FIELDS,
+        section_opened=False,
+        section_collapsible=True,
     )
     append_fields_to_layout(
         doctype="CRM Lead",
         layout_type="Data Fields",
         section_name="real_estate_data_fields_section",
-        section_label="Real Estate",
+        section_label="Buyer and Seller Details",
         column_name="column_real_estate_data_fields",
         fields=LEAD_REAL_ESTATE_LAYOUT_FIELDS,
+        section_opened=False,
+        section_collapsible=True,
     )
     append_fields_to_layout(
         doctype="CRM Lead",
@@ -677,19 +666,55 @@ def ensure_lead_layouts_include_real_estate_fields():
         section_label="Task Execution and Milestone Deadlines",
         column_name="column_task_execution_data_fields",
         fields=LEAD_EVENT_LAYOUT_FIELDS,
+        section_opened=False,
+        section_collapsible=True,
     )
 
 
-def append_fields_to_layout(doctype, layout_type, section_name, column_name, fields, section_label=None):
+def remove_crm_lead_custom_side_panel_sections():
+    """Undo previously-added Lead sidebar sections while preserving the original sidebar layout."""
+
+    layout_name = "CRM Lead-Side Panel"
+    if not frappe.db.exists("CRM Fields Layout", layout_name):
+        return
+
+    layout_doc = frappe.get_doc("CRM Fields Layout", layout_name)
+    layout = parse_layout(layout_doc.layout)
+    section_names_to_remove = {
+        "contact_identity_side_panel_section",
+        "real_estate_side_panel_section",
+        "task_execution_side_panel_section",
+    }
+    cleaned_layout = [section for section in layout if section.get("name") not in section_names_to_remove]
+
+    if len(cleaned_layout) != len(layout):
+        layout_doc.layout = json.dumps(cleaned_layout)
+        layout_doc.save(ignore_permissions=True)
+
+
+def append_fields_to_layout(
+    doctype,
+    layout_type,
+    section_name,
+    column_name,
+    fields,
+    section_label=None,
+    section_opened=True,
+    section_collapsible=None,
+):
     layout_doc = get_or_create_fields_layout(doctype, layout_type)
     layout = parse_layout(layout_doc.layout)
 
     section = find_layout_section(layout, section_name)
     if not section:
-        section = {"name": section_name, "opened": True, "columns": []}
-        if section_label:
-            section["label"] = section_label
+        section = {"name": section_name, "opened": section_opened, "columns": []}
         layout.append(section)
+
+    if section_label:
+        section["label"] = section_label
+    section["opened"] = section_opened
+    if section_collapsible is not None:
+        section["collapsible"] = section_collapsible
 
     columns = section.setdefault("columns", [])
     column = None
@@ -707,7 +732,8 @@ def append_fields_to_layout(doctype, layout_type, section_name, column_name, fie
         for existing_column in existing_section.get("columns", []):
             existing_fields.update(existing_column.get("fields", []))
 
-    changed = False
+    original_layout = parse_layout(layout_doc.layout)
+    changed = original_layout != layout
     for field in fields:
         if field not in existing_fields:
             column.setdefault("fields", []).append(field)
