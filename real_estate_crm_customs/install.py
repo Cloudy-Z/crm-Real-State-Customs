@@ -36,17 +36,11 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "insert_after": "interests_summary",
         },
         {
-            "fieldname": "job_title",
-            "label": "Job Title",
-            "fieldtype": "Data",
-            "insert_after": "whatsapp_number",
-        },
-        {
             "fieldname": "selection_tier",
             "label": "Selection Tier",
             "fieldtype": "Select",
             "options": "\nA - Priority\nB - Qualified\nC - Nurture",
-            "insert_after": "job_title",
+            "insert_after": "whatsapp_number",
         },
         {
             "fieldname": "next_event_window",
