@@ -13,7 +13,7 @@
   "doctype": "Custom Field",
   "dt": "CRM Lead",
   "fieldname": "party_type",
-  "label": "Party Type",
+  "label": "Type",
   "fieldtype": "Select",
   "options": "Buyer\nSeller",
   "default": "Buyer",
@@ -25,11 +25,165 @@
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
+  "fieldname": "interests_summary",
+  "label": "Interests Summary",
+  "fieldtype": "Small Text",
+  "insert_after": "party_type",
+  "name": "CRM Lead-interests_summary"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "whatsapp_number",
+  "label": "WhatsApp Number",
+  "fieldtype": "Phone",
+  "insert_after": "interests_summary",
+  "name": "CRM Lead-whatsapp_number"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "selection_tier",
+  "label": "Selection Tier",
+  "fieldtype": "Select",
+  "options": "\nA - Priority\nB - Qualified\nC - Nurture",
+  "insert_after": "whatsapp_number",
+  "name": "CRM Lead-selection_tier"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "next_event_window",
+  "label": "Next Event Window",
+  "fieldtype": "Datetime",
+  "insert_after": "selection_tier",
+  "name": "CRM Lead-next_event_window"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "event_status_lifecycle",
+  "label": "Event Status Lifecycle",
+  "fieldtype": "Select",
+  "options": "\nScheduled\nCompleted\nPostponed\nNo Show",
+  "insert_after": "next_event_window",
+  "name": "CRM Lead-event_status_lifecycle"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "buyer_requirements_section",
+  "label": "Buyer Requirements and Search Filters",
+  "fieldtype": "Section Break",
+  "insert_after": "event_status_lifecycle",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "collapsible": 1,
+  "name": "CRM Lead-buyer_requirements_section"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "buyer_budget",
+  "label": "Budget",
+  "fieldtype": "Currency",
+  "insert_after": "buyer_requirements_section",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-buyer_budget"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "interested_unit_area",
+  "label": "Interested Unit Area",
+  "fieldtype": "Float",
+  "insert_after": "buyer_budget",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-interested_unit_area"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "area_unit",
+  "label": "Area Unit",
+  "fieldtype": "Select",
+  "options": "Sq M\nSq Ft",
+  "default": "Sq M",
+  "insert_after": "interested_unit_area",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-area_unit"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "preferred_unit_type",
+  "label": "Unit Type",
+  "fieldtype": "Select",
+  "options": "\nApartment\nDuplex\nTownhouse\nVilla\nChalet\nStudio\nPenthouse",
+  "insert_after": "area_unit",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-preferred_unit_type"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "preferred_area",
+  "label": "Area",
+  "fieldtype": "Data",
+  "insert_after": "preferred_unit_type",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-preferred_area"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "preferred_developer",
+  "label": "Developer",
+  "fieldtype": "Link",
+  "options": "Property Developer",
+  "insert_after": "preferred_area",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-preferred_developer"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "preferred_compound",
+  "label": "Compound / Project",
+  "fieldtype": "Link",
+  "options": "Real Estate Project",
+  "insert_after": "preferred_developer",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-preferred_compound"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "preferred_finishing_type",
+  "label": "Finishing Type",
+  "fieldtype": "Select",
+  "options": "\nCore & Shell\nSemi-Finished\nFully Finished",
+  "insert_after": "preferred_compound",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-preferred_finishing_type"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "preferred_delivery_time",
+  "label": "Delivery Time",
+  "fieldtype": "Data",
+  "insert_after": "preferred_finishing_type",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-preferred_delivery_time"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
   "fieldname": "interested_in_units",
   "label": "Interested in Units",
   "fieldtype": "Table",
   "options": "Lead Interested Unit",
-  "insert_after": "party_type",
+  "insert_after": "preferred_delivery_time",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "name": "CRM Lead-interested_in_units"
  }

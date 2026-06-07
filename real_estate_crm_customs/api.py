@@ -32,11 +32,7 @@ def create_resale_unit(owner_lead, project, unit_number, price=None):
     return unit.as_dict()
 
 
-@frappe.whitelist()
-def link_interested_unit(lead, unit):
-    if not frappe.db.exists("CRM Lead", lead):
-        frappe.throw(_("Lead {0} was not found.").format(lead), frappe.DoesNotExistError)
-
+def _validate_buyer_interest_unit(lead_doc, unit):
     if not frappe.db.exists("Real Estate Unit", unit):
         frappe.throw(_("Real Estate Unit {0} was not found.").format(unit), frappe.DoesNotExistError)
 
@@ -44,22 +40,48 @@ def link_interested_unit(lead, unit):
     if status != "Available":
         frappe.throw(_("Only Available units can be linked as interested properties."), frappe.ValidationError)
 
-    doc = frappe.get_doc("CRM Lead", lead)
-    if doc.get("party_type") and doc.get("party_type") != "Buyer":
+    if lead_doc.get("party_type") and lead_doc.get("party_type") != "Buyer":
         frappe.throw(_("Only Buyer leads can be linked to interested properties."), frappe.ValidationError)
 
-    for row in doc.get("interested_in_units") or []:
-        if row.unit == unit:
-            return doc.as_dict()
 
-    doc.append(
-        "interested_in_units",
-        {
-            "doctype": "Lead Interested Unit",
-            "unit": unit,
-        },
-    )
-    doc.save()
+@frappe.whitelist()
+def link_interested_unit(lead, unit):
+    return link_interested_units(lead, [unit])
+
+
+@frappe.whitelist()
+def link_interested_units(lead, units):
+    if not frappe.db.exists("CRM Lead", lead):
+        frappe.throw(_("Lead {0} was not found.").format(lead), frappe.DoesNotExistError)
+
+    if isinstance(units, str):
+        units = frappe.parse_json(units)
+
+    units = [unit for unit in (units or []) if unit]
+    if not units:
+        frappe.throw(_("Select at least one inventory unit."), frappe.ValidationError)
+
+    doc = frappe.get_doc("CRM Lead", lead)
+    existing_units = {row.unit for row in doc.get("interested_in_units") or [] if row.unit}
+    added = 0
+
+    for unit in dict.fromkeys(units):
+        _validate_buyer_interest_unit(doc, unit)
+        if unit in existing_units:
+            continue
+        doc.append(
+            "interested_in_units",
+            {
+                "doctype": "Lead Interested Unit",
+                "unit": unit,
+            },
+        )
+        existing_units.add(unit)
+        added += 1
+
+    if added:
+        doc.save()
+
     return doc.as_dict()
 
 
