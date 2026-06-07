@@ -57,15 +57,21 @@ def link_interested_units(lead, units):
     if isinstance(units, str):
         units = frappe.parse_json(units)
 
-    units = [unit for unit in (units or []) if unit]
-    if not units:
+    normalized_units = []
+    for unit in units or []:
+        if isinstance(unit, dict):
+            unit = unit.get("unit") or unit.get("value") or unit.get("name") or unit.get("real_estate_unit")
+        if unit:
+            normalized_units.append(unit)
+
+    if not normalized_units:
         frappe.throw(_("Select at least one inventory unit."), frappe.ValidationError)
 
     doc = frappe.get_doc("CRM Lead", lead)
     existing_units = {row.unit for row in doc.get("interested_in_units") or [] if row.unit}
     added = 0
 
-    for unit in dict.fromkeys(units):
+    for unit in dict.fromkeys(normalized_units):
         _validate_buyer_interest_unit(doc, unit)
         if unit in existing_units:
             continue
