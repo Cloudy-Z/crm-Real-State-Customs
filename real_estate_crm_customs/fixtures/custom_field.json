@@ -179,11 +179,33 @@
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
+  "fieldname": "no_answer_first_call",
+  "label": "No Answer – 1st Call Count",
+  "fieldtype": "Int",
+  "insert_after": "preferred_delivery_time",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "read_only": 1,
+  "name": "CRM Lead-no_answer_first_call"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "no_answer_second_call",
+  "label": "No Answer – 2nd Call Count",
+  "fieldtype": "Int",
+  "insert_after": "no_answer_first_call",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "read_only": 1,
+  "name": "CRM Lead-no_answer_second_call"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
   "fieldname": "interested_in_units",
   "label": "Interested in Units",
   "fieldtype": "Table",
   "options": "Lead Interested Unit",
-  "insert_after": "preferred_delivery_time",
+  "insert_after": "no_answer_second_call",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "name": "CRM Lead-interested_in_units"
  }

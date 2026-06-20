@@ -5,29 +5,56 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "interest_record_type",
   "unit",
+  "request_status",
+  "request_notes",
   "proposal_status"
  ],
  "fields": [
   {
-   "fieldname": "unit",
-   "fieldtype": "Link",
-   "label": "Real Estate Unit",
-   "options": "Real Estate Unit",
-   "reqd": 1,
-   "in_list_view": 1
+   "default": "Inventory Unit",
+   "fieldname": "interest_record_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Interest Record Type",
+   "options": "Inventory Unit\nRequest"
   },
   {
+   "depends_on": "eval:doc.interest_record_type != 'Request'",
+   "fieldname": "unit",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Real Estate Unit",
+   "options": "Real Estate Unit"
+  },
+  {
+   "depends_on": "eval:doc.interest_record_type == 'Request'",
+   "fieldname": "request_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Request Status",
+   "options": "\nOpen\nFulfilled\nCancelled"
+  },
+  {
+   "depends_on": "eval:doc.interest_record_type == 'Request'",
+   "fieldname": "request_notes",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Request Notes"
+  },
+  {
+   "depends_on": "eval:doc.interest_record_type != 'Request'",
    "fieldname": "proposal_status",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Proposal Status",
-   "options": "Sent\nViewed\nOffer Accepted\nRejected",
-   "in_list_view": 1
+   "options": "Sent\nViewed\nOffer Accepted\nRejected"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2026-05-29 00:00:00.000000",
+ "modified": "2026-06-20 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Real Estate CRM Customs",
  "name": "Lead Interested Unit",

@@ -42,6 +42,8 @@ fixtures = [
                     "CRM Lead-preferred_compound",
                     "CRM Lead-preferred_finishing_type",
                     "CRM Lead-preferred_delivery_time",
+                    "CRM Lead-no_answer_first_call",
+                    "CRM Lead-no_answer_second_call",
                     "CRM Lead-interested_in_units",
                     "CRM Lead-seller_property_section",
                     "CRM Lead-property_title",

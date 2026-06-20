@@ -9,5 +9,7 @@ The CRM portal action buttons are intentionally implemented in the CRM fork at `
 | Real Estate Project DocType | `real_estate_crm_customs/real_estate_crm_customs/doctype/real_estate_project` |
 | Real Estate Unit DocType and resale validation | `real_estate_crm_customs/real_estate_crm_customs/doctype/real_estate_unit` |
 | Lead Interested Unit child table | `real_estate_crm_customs/real_estate_crm_customs/doctype/lead_interested_unit` |
+| Buyer no-answer call reference counts | `no_answer_first_call` and `no_answer_second_call` CRM Lead custom fields, maintained through `real_estate_crm_customs.api.record_no_answer_attempt` and exposed in the Lead Properties tab |
+| Buyer request without inventory match | `Lead Interested Unit` rows can now be marked as `Request` with request notes/status and no linked `Real Estate Unit`; these rows remain in Buyer Interest until matching inventory is available |
 | CRM Lead fields | `install.py`, patch, and `fixtures/custom_field.json` |
-| Portal-visible Lead actions | CRM fork: `frontend/src/doctypes/crm_lead/form.js` |
+| Portal-visible Lead actions | CRM fork: `frontend/src/pages/Lead.vue` |

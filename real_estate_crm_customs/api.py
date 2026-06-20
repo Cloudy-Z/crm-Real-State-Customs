@@ -32,6 +32,11 @@ def create_resale_unit(owner_lead, project, unit_number, price=None):
     return unit.as_dict()
 
 
+def _validate_buyer_lead(lead_doc):
+    if lead_doc.get("party_type") and lead_doc.get("party_type") != "Buyer":
+        frappe.throw(_("Only Buyer leads can use buyer interest actions."), frappe.ValidationError)
+
+
 def _validate_buyer_interest_unit(lead_doc, unit):
     if not frappe.db.exists("Real Estate Unit", unit):
         frappe.throw(_("Real Estate Unit {0} was not found.").format(unit), frappe.DoesNotExistError)
@@ -40,8 +45,66 @@ def _validate_buyer_interest_unit(lead_doc, unit):
     if status != "Available":
         frappe.throw(_("Only Available units can be linked as interested properties."), frappe.ValidationError)
 
-    if lead_doc.get("party_type") and lead_doc.get("party_type") != "Buyer":
-        frappe.throw(_("Only Buyer leads can be linked to interested properties."), frappe.ValidationError)
+    _validate_buyer_lead(lead_doc)
+
+
+@frappe.whitelist()
+def record_no_answer_attempt(lead, attempt_number):
+    if not frappe.db.exists("CRM Lead", lead):
+        frappe.throw(_("Lead {0} was not found.").format(lead), frappe.DoesNotExistError)
+
+    doc = frappe.get_doc("CRM Lead", lead)
+    _validate_buyer_lead(doc)
+
+    attempt_number = str(attempt_number).strip()
+    field_by_attempt = {
+        "1": "no_answer_first_call",
+        "first": "no_answer_first_call",
+        "1st": "no_answer_first_call",
+        "2": "no_answer_second_call",
+        "second": "no_answer_second_call",
+        "2nd": "no_answer_second_call",
+    }
+    fieldname = field_by_attempt.get(attempt_number.lower())
+    if not fieldname:
+        frappe.throw(_("Attempt number must be 1 or 2."), frappe.ValidationError)
+
+    doc.set(fieldname, (doc.get(fieldname) or 0) + 1)
+    doc.save()
+    return {
+        "name": doc.name,
+        "no_answer_first_call": doc.get("no_answer_first_call") or 0,
+        "no_answer_second_call": doc.get("no_answer_second_call") or 0,
+    }
+
+
+@frappe.whitelist()
+def add_interest_request(lead, request_notes, request_status="Open"):
+    if not frappe.db.exists("CRM Lead", lead):
+        frappe.throw(_("Lead {0} was not found.").format(lead), frappe.DoesNotExistError)
+
+    doc = frappe.get_doc("CRM Lead", lead)
+    _validate_buyer_lead(doc)
+
+    request_notes = (request_notes or "").strip()
+    if not request_notes:
+        frappe.throw(_("Request notes are required."), frappe.ValidationError)
+
+    request_status = request_status or "Open"
+    if request_status not in {"Open", "Fulfilled", "Cancelled"}:
+        frappe.throw(_("Request status must be Open, Fulfilled, or Cancelled."), frappe.ValidationError)
+
+    doc.append(
+        "interested_in_units",
+        {
+            "doctype": "Lead Interested Unit",
+            "interest_record_type": "Request",
+            "request_status": request_status,
+            "request_notes": request_notes,
+        },
+    )
+    doc.save()
+    return doc.as_dict()
 
 
 @frappe.whitelist()
@@ -79,6 +142,7 @@ def link_interested_units(lead, units):
             "interested_in_units",
             {
                 "doctype": "Lead Interested Unit",
+                "interest_record_type": "Inventory Unit",
                 "unit": unit,
             },
         )
@@ -124,46 +188,40 @@ def get_lead_linked_units(lead):
         frappe.throw(_("Lead {0} was not found.").format(lead), frappe.DoesNotExistError)
 
     lead_doc = frappe.get_doc("CRM Lead", lead)
-    interested_rows = [row for row in lead_doc.get("interested_in_units") or [] if row.unit]
+    interest_table_rows = lead_doc.get("interested_in_units") or []
+    interested_rows = [row for row in interest_table_rows if row.unit]
+    request_rows = [row for row in interest_table_rows if row.get("interest_record_type") == "Request" or not row.unit]
     interested_units = [row.unit for row in interested_rows]
     proposal_status_by_unit = {row.unit: row.get("proposal_status") for row in interested_rows}
-
-    filters = []
-    if interested_units:
-        filters.append(["Real Estate Unit", "name", "in", interested_units])
-    filters.append(["Real Estate Unit", "owner_lead", "=", lead])
-
-    if not filters:
-        return []
 
     names = set(interested_units)
     owner_rows = frappe.get_all("Real Estate Unit", filters={"owner_lead": lead}, pluck="name")
     names.update(owner_rows)
 
-    if not names:
-        return []
-
-    rows = frappe.get_all(
-        "Real Estate Unit",
-        filters={"name": ["in", list(names)]},
-        fields=[
-            "name",
-            "sku",
-            "project",
-            "developer",
-            "unit_type",
-            "floor",
-            "finishing_type",
-            "status",
-            "price",
-            "owner_lead",
-            "modified",
-        ],
-        order_by="modified desc",
-    )
+    rows = []
+    if names:
+        rows = frappe.get_all(
+            "Real Estate Unit",
+            filters={"name": ["in", list(names)]},
+            fields=[
+                "name",
+                "sku",
+                "project",
+                "developer",
+                "unit_type",
+                "floor",
+                "finishing_type",
+                "status",
+                "price",
+                "owner_lead",
+                "modified",
+            ],
+            order_by="modified desc",
+        )
 
     interested_set = set(interested_units)
     for row in rows:
+        row.interest_record_type = "Inventory Unit"
         if row.name in interested_set and row.owner_lead == lead:
             row.relationship = _("Interested and Owned")
         elif row.owner_lead == lead:
@@ -171,5 +229,22 @@ def get_lead_linked_units(lead):
         else:
             row.relationship = _("Interested Unit")
         row.proposal_status = proposal_status_by_unit.get(row.name)
+
+    for index, row in enumerate(request_rows, start=1):
+        rows.append(
+            frappe._dict(
+                {
+                    "name": row.name or f"request-{index}",
+                    "sku": _("Request"),
+                    "interest_record_type": "Request",
+                    "request_status": row.get("request_status") or "Open",
+                    "request_notes": row.get("request_notes"),
+                    "relationship": _("Interest Request"),
+                    "proposal_status": None,
+                    "owner_lead": None,
+                    "modified": row.modified,
+                }
+            )
+        )
 
     return rows
