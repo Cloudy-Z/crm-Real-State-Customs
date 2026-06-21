@@ -136,7 +136,7 @@ CRM_LEAD_CUSTOM_FIELDS = {
         },
         {
             "fieldname": "no_answer_first_call",
-            "label": "No Answer – 1st Call Count",
+            "label": "Current No Answer – 1st Call",
             "fieldtype": "Int",
             "insert_after": "preferred_delivery_time",
             "depends_on": "eval:doc.party_type == 'Buyer'",
@@ -144,9 +144,42 @@ CRM_LEAD_CUSTOM_FIELDS = {
         },
         {
             "fieldname": "no_answer_second_call",
-            "label": "No Answer – 2nd Call Count",
+            "label": "Current No Answer – 2nd Call",
             "fieldtype": "Int",
             "insert_after": "no_answer_first_call",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+            "read_only": 1,
+        },
+        {
+            "fieldname": "no_answer_consecutive_count",
+            "label": "Current No Answer Streak",
+            "fieldtype": "Int",
+            "insert_after": "no_answer_second_call",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+            "read_only": 1,
+        },
+        {
+            "fieldname": "no_answer_total_count",
+            "label": "Total No Answer Count",
+            "fieldtype": "Int",
+            "insert_after": "no_answer_consecutive_count",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+            "read_only": 1,
+        },
+        {
+            "fieldname": "last_call_outcome",
+            "label": "Last Call Outcome",
+            "fieldtype": "Select",
+            "options": "\nAnswered\nNo Answer",
+            "insert_after": "no_answer_total_count",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+            "read_only": 1,
+        },
+        {
+            "fieldname": "last_call_at",
+            "label": "Last Call At",
+            "fieldtype": "Datetime",
+            "insert_after": "last_call_outcome",
             "depends_on": "eval:doc.party_type == 'Buyer'",
             "read_only": 1,
         },
@@ -155,7 +188,7 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "label": "Interested in Units",
             "fieldtype": "Table",
             "options": "Lead Interested Unit",
-            "insert_after": "no_answer_second_call",
+            "insert_after": "last_call_at",
             "depends_on": "eval:doc.party_type == 'Buyer'",
         },
         {
@@ -243,6 +276,31 @@ CRM_LEAD_CUSTOM_FIELDS = {
     ]
 }
 
+CRM_USER_CUSTOM_FIELDS = {
+    "User": [
+        {
+            "fieldname": "real_estate_agent_outreach_section",
+            "label": "Real Estate Agent Outreach",
+            "fieldtype": "Section Break",
+            "insert_after": "user_emails",
+            "collapsible": 1,
+        },
+        {
+            "fieldname": "real_estate_agent_whatsapp_number",
+            "label": "Agent WhatsApp Number",
+            "fieldtype": "Phone",
+            "insert_after": "real_estate_agent_outreach_section",
+        },
+        {
+            "fieldname": "real_estate_agent_outreach_email",
+            "label": "Agent Outreach Email",
+            "fieldtype": "Data",
+            "options": "Email",
+            "insert_after": "real_estate_agent_whatsapp_number",
+        },
+    ]
+}
+
 LEAD_CONTACT_LAYOUT_FIELDS = [
     "lead_name",
     "mobile_no",
@@ -268,6 +326,10 @@ LEAD_REAL_ESTATE_LAYOUT_FIELDS = [
     "preferred_delivery_time",
     "no_answer_first_call",
     "no_answer_second_call",
+    "no_answer_consecutive_count",
+    "no_answer_total_count",
+    "last_call_outcome",
+    "last_call_at",
     "interested_in_units",
     "property_title",
     "target_asking_price",
@@ -532,6 +594,8 @@ def after_migrate():
 def sync_real_estate_crm_defaults():
     ensure_module_def()
     setup_crm_lead_custom_fields()
+    setup_user_agent_custom_fields()
+    ensure_real_estate_lead_statuses()
     enforce_crm_lead_phone_mandatory()
     setup_real_estate_client_scripts()
     setup_crm_portal_defaults()
@@ -557,6 +621,29 @@ def setup_crm_lead_custom_fields():
 
     create_custom_fields(CRM_LEAD_CUSTOM_FIELDS, update=True)
     frappe.clear_cache(doctype="CRM Lead")
+
+
+def setup_user_agent_custom_fields():
+    if not frappe.db.exists("DocType", "User"):
+        return
+
+    create_custom_fields(CRM_USER_CUSTOM_FIELDS, update=True)
+    frappe.clear_cache(doctype="User")
+
+
+def ensure_real_estate_lead_statuses():
+    if not frappe.db.exists("DocType", "CRM Lead Status"):
+        return
+
+    statuses = [
+        {"lead_status": "No Answer", "type": "Ongoing", "color": "orange", "position": 35},
+        {"lead_status": "Contacted", "type": "Ongoing", "color": "blue", "position": 20},
+    ]
+    for status in statuses:
+        if frappe.db.exists("CRM Lead Status", status["lead_status"]):
+            continue
+        doc = frappe.get_doc({"doctype": "CRM Lead Status", **status})
+        doc.insert(ignore_permissions=True)
 
 
 def enforce_crm_lead_phone_mandatory():

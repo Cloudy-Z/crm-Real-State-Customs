@@ -44,6 +44,10 @@ fixtures = [
                     "CRM Lead-preferred_delivery_time",
                     "CRM Lead-no_answer_first_call",
                     "CRM Lead-no_answer_second_call",
+                    "CRM Lead-no_answer_consecutive_count",
+                    "CRM Lead-no_answer_total_count",
+                    "CRM Lead-last_call_outcome",
+                    "CRM Lead-last_call_at",
                     "CRM Lead-interested_in_units",
                     "CRM Lead-seller_property_section",
                     "CRM Lead-property_title",
@@ -59,5 +63,19 @@ fixtures = [
                 ],
             ]
         ],
-    }
+    },
+    {
+        "dt": "Custom Field",
+        "filters": [
+            [
+                "name",
+                "in",
+                [
+                    "User-real_estate_agent_outreach_section",
+                    "User-real_estate_agent_whatsapp_number",
+                    "User-real_estate_agent_outreach_email",
+                ],
+            ]
+        ],
+    },
 ]

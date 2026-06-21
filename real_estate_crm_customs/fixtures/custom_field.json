@@ -180,7 +180,7 @@
   "doctype": "Custom Field",
   "dt": "CRM Lead",
   "fieldname": "no_answer_first_call",
-  "label": "No Answer – 1st Call Count",
+  "label": "Current No Answer – 1st Call",
   "fieldtype": "Int",
   "insert_after": "preferred_delivery_time",
   "depends_on": "eval:doc.party_type == 'Buyer'",
@@ -191,7 +191,7 @@
   "doctype": "Custom Field",
   "dt": "CRM Lead",
   "fieldname": "no_answer_second_call",
-  "label": "No Answer – 2nd Call Count",
+  "label": "Current No Answer – 2nd Call",
   "fieldtype": "Int",
   "insert_after": "no_answer_first_call",
   "depends_on": "eval:doc.party_type == 'Buyer'",
@@ -201,12 +201,86 @@
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
+  "fieldname": "no_answer_consecutive_count",
+  "label": "Current No Answer Streak",
+  "fieldtype": "Int",
+  "insert_after": "no_answer_second_call",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "read_only": 1,
+  "name": "CRM Lead-no_answer_consecutive_count"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "no_answer_total_count",
+  "label": "Total No Answer Count",
+  "fieldtype": "Int",
+  "insert_after": "no_answer_consecutive_count",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "read_only": 1,
+  "name": "CRM Lead-no_answer_total_count"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "last_call_outcome",
+  "label": "Last Call Outcome",
+  "fieldtype": "Select",
+  "options": "\nAnswered\nNo Answer",
+  "insert_after": "no_answer_total_count",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "read_only": 1,
+  "name": "CRM Lead-last_call_outcome"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "last_call_at",
+  "label": "Last Call At",
+  "fieldtype": "Datetime",
+  "insert_after": "last_call_outcome",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "read_only": 1,
+  "name": "CRM Lead-last_call_at"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
   "fieldname": "interested_in_units",
   "label": "Interested in Units",
   "fieldtype": "Table",
   "options": "Lead Interested Unit",
-  "insert_after": "no_answer_second_call",
+  "insert_after": "last_call_at",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "name": "CRM Lead-interested_in_units"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "User",
+  "fieldname": "real_estate_agent_outreach_section",
+  "label": "Real Estate Agent Outreach",
+  "fieldtype": "Section Break",
+  "insert_after": "user_emails",
+  "collapsible": 1,
+  "name": "User-real_estate_agent_outreach_section"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "User",
+  "fieldname": "real_estate_agent_whatsapp_number",
+  "label": "Agent WhatsApp Number",
+  "fieldtype": "Phone",
+  "insert_after": "real_estate_agent_outreach_section",
+  "name": "User-real_estate_agent_whatsapp_number"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "User",
+  "fieldname": "real_estate_agent_outreach_email",
+  "label": "Agent Outreach Email",
+  "fieldtype": "Data",
+  "options": "Email",
+  "insert_after": "real_estate_agent_whatsapp_number",
+  "name": "User-real_estate_agent_outreach_email"
  }
 ]

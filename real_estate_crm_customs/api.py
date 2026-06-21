@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.utils import now_datetime
 
 
 @frappe.whitelist()
@@ -48,33 +49,288 @@ def _validate_buyer_interest_unit(lead_doc, unit):
     _validate_buyer_lead(lead_doc)
 
 
-@frappe.whitelist()
-def record_no_answer_attempt(lead, attempt_number):
+LEAD_NO_ANSWER_STATUS = "No Answer"
+LEAD_ANSWERED_STATUS = "Contacted"
+
+
+def _get_lead_doc(lead):
     if not frappe.db.exists("CRM Lead", lead):
         frappe.throw(_("Lead {0} was not found.").format(lead), frappe.DoesNotExistError)
+    return frappe.get_doc("CRM Lead", lead)
 
-    doc = frappe.get_doc("CRM Lead", lead)
-    _validate_buyer_lead(doc)
 
-    attempt_number = str(attempt_number).strip()
-    field_by_attempt = {
-        "1": "no_answer_first_call",
-        "first": "no_answer_first_call",
-        "1st": "no_answer_first_call",
-        "2": "no_answer_second_call",
-        "second": "no_answer_second_call",
-        "2nd": "no_answer_second_call",
-    }
-    fieldname = field_by_attempt.get(attempt_number.lower())
-    if not fieldname:
-        frappe.throw(_("Attempt number must be 1 or 2."), frappe.ValidationError)
+def _to_int(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
-    doc.set(fieldname, (doc.get(fieldname) or 0) + 1)
-    doc.save()
+
+def _ensure_lead_status(status, status_type="Ongoing", color="orange", position=30):
+    if not frappe.db.exists("DocType", "CRM Lead Status"):
+        return
+
+    if frappe.db.exists("CRM Lead Status", status):
+        return
+
+    doc = frappe.get_doc(
+        {
+            "doctype": "CRM Lead Status",
+            "lead_status": status,
+            "type": status_type,
+            "color": color,
+            "position": position,
+        }
+    )
+    doc.insert(ignore_permissions=True)
+
+
+def _set_lead_status(doc, status):
+    if not status:
+        return
+    _ensure_lead_status(status, status_type="Ongoing", color="orange" if status == LEAD_NO_ANSWER_STATUS else "blue")
+    doc.status = status
+
+
+def _get_user_doc(user):
+    if not user or not frappe.db.exists("User", user):
+        return None
+    return frappe.get_doc("User", user)
+
+
+def _get_user_outreach_email(user_doc):
+    if not user_doc:
+        return None
+
+    email = user_doc.get("real_estate_agent_outreach_email") or user_doc.get("email")
+    if email:
+        return email
+
+    for row in user_doc.get("user_emails") or []:
+        if row.get("email_id"):
+            return row.get("email_id")
+    return None
+
+
+def _get_user_whatsapp_number(user_doc):
+    if not user_doc:
+        return None
+    return (
+        user_doc.get("real_estate_agent_whatsapp_number")
+        or user_doc.get("mobile_no")
+        or user_doc.get("phone")
+    )
+
+
+def _resolve_assigned_agent_identity(lead_doc):
+    user = lead_doc.get("lead_owner") or frappe.session.user
+    user_doc = _get_user_doc(user)
+
+    return frappe._dict(
+        {
+            "user": user,
+            "full_name": user_doc.get("full_name") if user_doc else user,
+            "email": _get_user_outreach_email(user_doc),
+            "whatsapp_number": _get_user_whatsapp_number(user_doc),
+        }
+    )
+
+
+def _lead_contact_number(lead_doc):
+    return lead_doc.get("whatsapp_number") or lead_doc.get("mobile_no") or lead_doc.get("phone")
+
+
+def _lead_email(lead_doc):
+    return lead_doc.get("email") or lead_doc.get("email_id")
+
+
+def _add_lead_comment(lead_doc, text):
+    try:
+        lead_doc.add_comment("Comment", text=text)
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Real Estate Lead Action Comment Failed")
+
+
+def _create_manual_call_log(lead_doc, outcome, agent_identity, note=None):
+    if not frappe.db.exists("DocType", "CRM Call Log"):
+        return None
+
+    timestamp = now_datetime()
+    status = "No Answer" if outcome == "no_answer" else "Completed"
+    call_log = frappe.get_doc(
+        {
+            "doctype": "CRM Call Log",
+            "from": agent_identity.get("whatsapp_number") or agent_identity.get("email") or agent_identity.get("user") or "Manual",
+            "to": _lead_contact_number(lead_doc) or "Unknown",
+            "type": "Outgoing",
+            "status": status,
+            "caller": agent_identity.get("user"),
+            "reference_doctype": "CRM Lead",
+            "reference_docname": lead_doc.name,
+            "medium": "Manual CRM Action",
+            "start_time": timestamp,
+            "end_time": timestamp,
+            "duration": 0,
+        }
+    )
+    call_log.insert(ignore_permissions=True)
+    if hasattr(call_log, "link_with_reference_doc"):
+        call_log.link_with_reference_doc("CRM Lead", lead_doc.name)
+        call_log.save(ignore_permissions=True)
+    return call_log.name
+
+
+def _call_action_response(doc, agent_identity=None, call_log=None):
     return {
         "name": doc.name,
+        "status": doc.get("status"),
         "no_answer_first_call": doc.get("no_answer_first_call") or 0,
         "no_answer_second_call": doc.get("no_answer_second_call") or 0,
+        "no_answer_consecutive_count": doc.get("no_answer_consecutive_count") or 0,
+        "no_answer_total_count": doc.get("no_answer_total_count") or 0,
+        "last_call_outcome": doc.get("last_call_outcome"),
+        "last_call_at": doc.get("last_call_at"),
+        "assigned_agent": agent_identity or _resolve_assigned_agent_identity(doc),
+        "call_log": call_log,
+    }
+
+
+@frappe.whitelist()
+def get_assigned_agent_identity(lead):
+    doc = _get_lead_doc(lead)
+    return _resolve_assigned_agent_identity(doc)
+
+
+@frappe.whitelist()
+def record_lead_call_outcome(lead, outcome, note=None):
+    doc = _get_lead_doc(lead)
+    outcome_key = (outcome or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if outcome_key not in {"answered", "no_answer"}:
+        frappe.throw(_("Call outcome must be Answered or No Answer."), frappe.ValidationError)
+
+    agent_identity = _resolve_assigned_agent_identity(doc)
+    current_time = now_datetime()
+
+    if outcome_key == "no_answer":
+        streak = _to_int(doc.get("no_answer_consecutive_count")) + 1
+        total = _to_int(doc.get("no_answer_total_count")) + 1
+        doc.set("no_answer_consecutive_count", streak)
+        doc.set("no_answer_total_count", total)
+        doc.set("no_answer_first_call", 1 if streak >= 1 else 0)
+        doc.set("no_answer_second_call", 1 if streak >= 2 else 0)
+        doc.set("last_call_outcome", "No Answer")
+        _set_lead_status(doc, LEAD_NO_ANSWER_STATUS)
+    else:
+        streak = 0
+        total = _to_int(doc.get("no_answer_total_count"))
+        doc.set("no_answer_consecutive_count", 0)
+        doc.set("no_answer_first_call", 0)
+        doc.set("no_answer_second_call", 0)
+        doc.set("last_call_outcome", "Answered")
+        _set_lead_status(doc, LEAD_ANSWERED_STATUS)
+
+    doc.set("last_call_at", current_time)
+    doc.save(ignore_permissions=True)
+
+    call_log = _create_manual_call_log(doc, outcome_key, agent_identity, note=note)
+    action_text = _("No-answer call recorded") if outcome_key == "no_answer" else _("Answered call recorded")
+    comment = (
+        f"{action_text}. "
+        f"Current no-answer streak: {streak}. "
+        f"Total no-answer count: {total}. "
+        f"Assigned agent: {agent_identity.get('full_name') or agent_identity.get('user')}."
+    )
+    if note:
+        comment = f"{comment} Note: {note}"
+    _add_lead_comment(doc, comment)
+
+    return _call_action_response(doc, agent_identity=agent_identity, call_log=call_log)
+
+
+@frappe.whitelist()
+def record_no_answer_attempt(lead, attempt_number=None):
+    return record_lead_call_outcome(lead=lead, outcome="No Answer")
+
+
+def _create_whatsapp_message(doc, message):
+    if not frappe.db.exists("DocType", "WhatsApp Message"):
+        frappe.throw(_("WhatsApp Message DocType is not installed."), frappe.ValidationError)
+
+    to_number = _lead_contact_number(doc)
+    if not to_number:
+        frappe.throw(_("The lead does not have a WhatsApp or mobile number."), frappe.ValidationError)
+
+    whatsapp_message = frappe.get_doc(
+        {
+            "doctype": "WhatsApp Message",
+            "reference_doctype": "CRM Lead",
+            "reference_name": doc.name,
+            "message": message,
+            "to": to_number,
+            "content_type": "text",
+        }
+    )
+    whatsapp_message.insert(ignore_permissions=True)
+    return whatsapp_message.name
+
+
+def _send_email_message(doc, agent_identity, subject, message):
+    recipient = _lead_email(doc)
+    if not recipient:
+        frappe.throw(_("The lead does not have an email address."), frappe.ValidationError)
+
+    make_email = frappe.get_attr("frappe.core.doctype.communication.email.make")
+    communication = make_email(
+        recipients=recipient,
+        sender=agent_identity.get("email"),
+        sender_full_name=agent_identity.get("full_name"),
+        subject=subject or _("Follow up for {0}").format(doc.get("lead_name") or doc.name),
+        content=message,
+        doctype="CRM Lead",
+        name=doc.name,
+        send_email=1,
+    )
+    return communication.name if hasattr(communication, "name") else communication
+
+
+@frappe.whitelist()
+def record_lead_outreach_action(lead, channel, message=None, subject=None, send=0):
+    doc = _get_lead_doc(lead)
+    channel_key = (channel or "").strip().lower()
+    if channel_key not in {"whatsapp", "email"}:
+        frappe.throw(_("Outreach channel must be WhatsApp or Email."), frappe.ValidationError)
+
+    agent_identity = _resolve_assigned_agent_identity(doc)
+    if channel_key == "whatsapp" and not agent_identity.get("whatsapp_number"):
+        frappe.throw(_("The assigned agent does not have a WhatsApp number configured."), frappe.ValidationError)
+    if channel_key == "email" and not agent_identity.get("email"):
+        frappe.throw(_("The assigned agent does not have an outreach email configured."), frappe.ValidationError)
+
+    message = message or _("Follow-up action from the real-estate CRM.")
+    external_record = None
+    if frappe.utils.cint(send):
+        if channel_key == "whatsapp":
+            external_record = _create_whatsapp_message(doc, message)
+        else:
+            external_record = _send_email_message(doc, agent_identity, subject, message)
+
+    title = _("WhatsApp action sent") if channel_key == "whatsapp" and external_record else _("WhatsApp action recorded")
+    if channel_key == "email":
+        title = _("Email action sent") if external_record else _("Email action recorded")
+
+    _add_lead_comment(
+        doc,
+        f"{title}. Source: "
+        f"{agent_identity.get('whatsapp_number') if channel_key == 'whatsapp' else agent_identity.get('email')}. "
+        f"Details: {message}",
+    )
+
+    return {
+        "name": doc.name,
+        "channel": "WhatsApp" if channel_key == "whatsapp" else "Email",
+        "assigned_agent": agent_identity,
+        "sent": bool(external_record),
+        "external_record": external_record,
     }
 
 
