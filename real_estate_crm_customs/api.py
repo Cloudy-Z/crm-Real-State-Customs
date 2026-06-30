@@ -504,3 +504,40 @@ def get_lead_linked_units(lead):
         )
 
     return rows
+
+
+@frappe.whitelist()
+def get_available_units_for_selection(lead=None):
+    """Return available inventory units with key details for the unit selection popup.
+
+    Optionally filters out units already linked to the given lead.
+    Returns SKU, project, developer, unit_type, floor, finishing_type, price, and status.
+    """
+    filters = {"status": "Available"}
+    fields = [
+        "name",
+        "sku",
+        "project",
+        "developer",
+        "unit_type",
+        "floor",
+        "finishing_type",
+        "status",
+        "price",
+    ]
+
+    units = frappe.get_all(
+        "Real Estate Unit",
+        filters=filters,
+        fields=fields,
+        order_by="modified desc",
+        limit_page_length=200,
+    )
+
+    # Exclude units already linked to this lead
+    if lead and frappe.db.exists("CRM Lead", lead):
+        lead_doc = frappe.get_doc("CRM Lead", lead)
+        already_linked = {row.unit for row in lead_doc.get("interested_in_units") or [] if row.unit}
+        units = [u for u in units if u.name not in already_linked]
+
+    return units

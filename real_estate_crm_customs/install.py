@@ -316,7 +316,6 @@ LEAD_REAL_ESTATE_LAYOUT_FIELDS = [
     "party_type",
     "interests_summary",
     "buyer_budget",
-    "interested_unit_area",
     "area_unit",
     "preferred_unit_type",
     "preferred_area",
@@ -324,12 +323,6 @@ LEAD_REAL_ESTATE_LAYOUT_FIELDS = [
     "preferred_compound",
     "preferred_finishing_type",
     "preferred_delivery_time",
-    "no_answer_first_call",
-    "no_answer_second_call",
-    "no_answer_consecutive_count",
-    "no_answer_total_count",
-    "last_call_outcome",
-    "last_call_at",
     "interested_in_units",
     "property_title",
     "target_asking_price",
@@ -343,39 +336,37 @@ LEAD_REAL_ESTATE_LAYOUT_FIELDS = [
     "property_documents",
 ]
 
+LEAD_CALL_FLAGS_LAYOUT_FIELDS = [
+    "no_answer_first_call",
+    "no_answer_second_call",
+    "no_answer_consecutive_count",
+    "no_answer_total_count",
+    "last_call_outcome",
+    "last_call_at",
+]
+
 DEFAULT_CRM_LEAD_SIDE_PANEL_LAYOUT = [
     {
-        "label": "Details",
-        "name": "details_section",
+        "label": "Contact & Details",
+        "name": "contact_details_section",
         "opened": True,
         "columns": [
             {
-                "name": "column_kl92",
-                "fields": [
-                    "organization",
-                    "website",
-                    "territory",
-                    "industry",
-                    "job_title",
-                    "source",
-                    "lead_owner",
-                ],
-            }
-        ],
-    },
-    {
-        "label": "Person",
-        "name": "person_section",
-        "opened": True,
-        "columns": [
-            {
-                "name": "column_XmW2",
+                "name": "column_contact_details",
                 "fields": [
                     "salutation",
                     "first_name",
                     "last_name",
                     "email",
                     "mobile_no",
+                    "whatsapp_number",
+                    "lead_owner",
+                    "source",
+                    "job_title",
+                    "organization",
+                    "website",
+                    "territory",
+                    "industry",
                 ],
             }
         ],
@@ -808,31 +799,45 @@ def ensure_lead_layouts_include_real_estate_fields():
 def ensure_crm_lead_main_form_sections():
     """Keep the document sections in the main Lead form, not in the right sidebar."""
 
+    # Section 1: Contact & Person merged with Lead Owner, Source, Job Title
     append_fields_to_layout(
         doctype="CRM Lead",
         layout_type="Data Fields",
         section_name="contact_identity_data_fields_section",
-        section_label="Contact Identity Card",
+        section_label="Contact & Details",
         column_name="column_contact_identity_data_fields",
         fields=LEAD_CONTACT_LAYOUT_FIELDS,
-        section_opened=False,
+        section_opened=True,
         section_collapsible=True,
     )
+    # Section 2: Interest preferences (buyer/seller details without flags)
     append_fields_to_layout(
         doctype="CRM Lead",
         layout_type="Data Fields",
         section_name="real_estate_data_fields_section",
-        section_label="Buyer and Seller Details",
+        section_label="Interest & Property Details",
         column_name="column_real_estate_data_fields",
         fields=LEAD_REAL_ESTATE_LAYOUT_FIELDS,
         section_opened=False,
         section_collapsible=True,
     )
+    # Section 3: Call flags and action outcomes
+    append_fields_to_layout(
+        doctype="CRM Lead",
+        layout_type="Data Fields",
+        section_name="call_flags_data_fields_section",
+        section_label="Call Flags & Action Status",
+        column_name="column_call_flags_data_fields",
+        fields=LEAD_CALL_FLAGS_LAYOUT_FIELDS,
+        section_opened=False,
+        section_collapsible=True,
+    )
+    # Section 4: Task execution and milestone deadlines
     append_fields_to_layout(
         doctype="CRM Lead",
         layout_type="Data Fields",
         section_name="task_execution_data_fields_section",
-        section_label="Task Execution and Milestone Deadlines",
+        section_label="Task Execution & Milestone Deadlines",
         column_name="column_task_execution_data_fields",
         fields=LEAD_EVENT_LAYOUT_FIELDS,
         section_opened=False,
