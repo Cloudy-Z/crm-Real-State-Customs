@@ -135,10 +135,25 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "depends_on": "eval:doc.party_type == 'Buyer'",
         },
         {
-            "fieldname": "no_answer_first_call",
-            "label": "Current No Answer – 1st Call",
-            "fieldtype": "Int",
+            "fieldname": "lead_age",
+            "label": "Lead Age",
+            "fieldtype": "Data",
             "insert_after": "preferred_delivery_time",
+            "read_only": 1,
+            "description": "Auto-updated every hour by the system.",
+        },
+        {
+            "fieldname": "is_primary_buyer",
+            "label": "Primary Buyer",
+            "fieldtype": "Check",
+            "insert_after": "lead_age",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+        },
+        {
+            "fieldname": "no_answer_first_call",
+            "label": "Current No Answer \u2013 1st Call",
+            "fieldtype": "Int",
+            "insert_after": "is_primary_buyer",
             "depends_on": "eval:doc.party_type == 'Buyer'",
             "read_only": 1,
         },
@@ -627,8 +642,11 @@ def ensure_real_estate_lead_statuses():
         return
 
     statuses = [
-        {"lead_status": "No Answer", "type": "Ongoing", "color": "orange", "position": 35},
+        {"lead_status": "Fresh Lead", "type": "Ongoing", "color": "blue", "position": 10},
         {"lead_status": "Contacted", "type": "Ongoing", "color": "blue", "position": 20},
+        {"lead_status": "No Answer", "type": "Ongoing", "color": "orange", "position": 35},
+        {"lead_status": "Interested", "type": "Ongoing", "color": "green", "position": 40},
+        {"lead_status": "Not Interested", "type": "Closed", "color": "red", "position": 90},
     ]
     for status in statuses:
         if frappe.db.exists("CRM Lead Status", status["lead_status"]):

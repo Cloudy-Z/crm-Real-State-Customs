@@ -1,0 +1,71 @@
+{
+ "actions": [],
+ "creation": "2026-08-03 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "showing_date",
+  "buyer_lead",
+  "buyer_name",
+  "agent",
+  "status",
+  "result_notes"
+ ],
+ "fields": [
+  {
+   "fieldname": "showing_date",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Showing Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "buyer_lead",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Buyer Lead",
+   "options": "CRM Lead",
+   "reqd": 1
+  },
+  {
+   "fieldname": "buyer_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Buyer Name",
+   "fetch_from": "buyer_lead.lead_name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "agent",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Agent",
+   "options": "User"
+  },
+  {
+   "default": "Scheduled",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Scheduled\nDone\nCancelled\nRescheduled"
+  },
+  {
+   "fieldname": "result_notes",
+   "fieldtype": "Small Text",
+   "label": "Result Notes"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-08-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Real Estate CRM Customs",
+ "name": "Unit Scheduled Showing",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

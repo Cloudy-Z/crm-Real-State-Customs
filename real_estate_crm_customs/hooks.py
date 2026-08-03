@@ -10,6 +10,14 @@ required_apps = ["crm"]
 after_install = "real_estate_crm_customs.install.after_install"
 after_migrate = "real_estate_crm_customs.install.after_migrate"
 
+scheduler_events = {
+    "cron": {
+        "0 * * * *": [
+            "real_estate_crm_customs.api.update_all_lead_ages",
+        ]
+    }
+}
+
 doc_events = {
     "Real Estate Unit": {
         "before_insert": "real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit.before_insert_generate_sku",
@@ -48,6 +56,8 @@ fixtures = [
                     "CRM Lead-no_answer_total_count",
                     "CRM Lead-last_call_outcome",
                     "CRM Lead-last_call_at",
+                    "CRM Lead-lead_age",
+                    "CRM Lead-is_primary_buyer",
                     "CRM Lead-interested_in_units",
                     "CRM Lead-seller_property_section",
                     "CRM Lead-property_title",
