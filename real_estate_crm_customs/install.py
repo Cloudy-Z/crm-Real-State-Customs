@@ -646,7 +646,7 @@ def ensure_real_estate_lead_statuses():
         {"lead_status": "Contacted", "type": "Ongoing", "color": "blue", "position": 20},
         {"lead_status": "No Answer", "type": "Ongoing", "color": "orange", "position": 35},
         {"lead_status": "Interested", "type": "Ongoing", "color": "green", "position": 40},
-        {"lead_status": "Not Interested", "type": "Closed", "color": "red", "position": 90},
+        {"lead_status": "Not Interested", "type": "Lost", "color": "red", "position": 90},
     ]
     for status in statuses:
         if frappe.db.exists("CRM Lead Status", status["lead_status"]):
