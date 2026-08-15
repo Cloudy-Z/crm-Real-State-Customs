@@ -26,16 +26,10 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "in_standard_filter": 1,
         },
         {
-            "fieldname": "interests_summary",
-            "label": "Interests Summary",
-            "fieldtype": "Small Text",
-            "insert_after": "party_type",
-        },
-        {
             "fieldname": "whatsapp_number",
             "label": "WhatsApp Number",
             "fieldtype": "Phone",
-            "insert_after": "interests_summary",
+            "insert_after": "party_type",
         },
         {
             "fieldname": "selection_tier",
@@ -45,23 +39,10 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "insert_after": "whatsapp_number",
         },
         {
-            "fieldname": "next_event_window",
-            "label": "Next Event Window",
-            "fieldtype": "Datetime",
-            "insert_after": "selection_tier",
-        },
-        {
-            "fieldname": "event_status_lifecycle",
-            "label": "Event Status Lifecycle",
-            "fieldtype": "Select",
-            "options": "\nScheduled\nCompleted\nPostponed\nNo Show",
-            "insert_after": "next_event_window",
-        },
-        {
             "fieldname": "buyer_requirements_section",
             "label": "Buyer Requirements and Search Filters",
             "fieldtype": "Section Break",
-            "insert_after": "event_status_lifecycle",
+            "insert_after": "selection_tier",
             "depends_on": "eval:doc.party_type == 'Buyer'",
             "collapsible": 1,
         },
@@ -73,19 +54,12 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "depends_on": "eval:doc.party_type == 'Buyer'",
         },
         {
-            "fieldname": "interested_unit_area",
-            "label": "Interested Unit Area",
-            "fieldtype": "Float",
-            "insert_after": "buyer_budget",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-        },
-        {
             "fieldname": "area_unit",
             "label": "Area Unit",
             "fieldtype": "Select",
             "options": "Sq M\nSq Ft",
             "default": "Sq M",
-            "insert_after": "interested_unit_area",
+            "insert_after": "buyer_budget",
             "depends_on": "eval:doc.party_type == 'Buyer'",
         },
         {
@@ -324,11 +298,10 @@ LEAD_CONTACT_LAYOUT_FIELDS = [
     "selection_tier",
 ]
 
-LEAD_EVENT_LAYOUT_FIELDS = ["next_event_window", "event_status_lifecycle"]
+LEAD_EVENT_LAYOUT_FIELDS = []  # Deprecated: event tracking now uses native Events
 
 LEAD_REAL_ESTATE_LAYOUT_FIELDS = [
     "party_type",
-    "interests_summary",
     "buyer_budget",
     "area_unit",
     "preferred_unit_type",
@@ -368,7 +341,6 @@ DEFAULT_CRM_LEAD_SIDE_PANEL_LAYOUT = [
             {
                 "name": "column_contact_details",
                 "fields": [
-                    "salutation",
                     "first_name",
                     "last_name",
                     "email",
@@ -377,10 +349,8 @@ DEFAULT_CRM_LEAD_SIDE_PANEL_LAYOUT = [
                     "lead_owner",
                     "source",
                     "job_title",
-                    "organization",
-                    "website",
-                    "territory",
-                    "industry",
+                    "party_type",
+                    "selection_tier",
                 ],
             }
         ],
@@ -803,16 +773,82 @@ def setup_crm_portal_defaults():
     ensure_real_estate_quick_filters()
 
 
+# Minimal Quick Entry layout for real estate lead creation
+LEAD_QUICK_ENTRY_LAYOUT = json.dumps([
+    {
+        "name": "basic_info_section",
+        "columns": [
+            {"name": "col_name", "fields": ["first_name", "last_name"]},
+            {"name": "col_type", "fields": ["party_type", "status"]},
+        ],
+    },
+    {
+        "name": "contact_section",
+        "columns": [
+            {"name": "col_phone", "fields": ["mobile_no", "whatsapp_number"]},
+            {"name": "col_email", "fields": ["email"]},
+        ],
+    },
+    {
+        "name": "lead_details_section",
+        "columns": [
+            {"name": "col_source", "fields": ["source", "lead_owner"]},
+            {"name": "col_tier", "fields": ["selection_tier"]},
+        ],
+    },
+])
+
+
 def ensure_lead_layouts_include_real_estate_fields():
-    append_fields_to_layout(
-        doctype="CRM Lead",
-        layout_type="Quick Entry",
-        section_name="lead_section",
-        column_name="column_real_estate_quick_entry",
-        fields=LEAD_REAL_ESTATE_LAYOUT_FIELDS,
-    )
+    # Overwrite Quick Entry with clean real estate layout
+    overwrite_quick_entry_layout()
     ensure_crm_lead_main_form_sections()
     reset_crm_lead_side_panel_to_default()
+    hide_irrelevant_upstream_fields()
+
+
+def overwrite_quick_entry_layout():
+    """Replace the default B2B Quick Entry layout with a minimal real estate version."""
+    layout_name = "CRM Lead-Quick Entry"
+    if frappe.db.exists("CRM Fields Layout", layout_name):
+        doc = frappe.get_doc("CRM Fields Layout", layout_name)
+        doc.layout = LEAD_QUICK_ENTRY_LAYOUT
+        doc.save(ignore_permissions=True)
+    else:
+        doc = frappe.new_doc("CRM Fields Layout")
+        doc.type = "Quick Entry"
+        doc.dt = "CRM Lead"
+        doc.layout = LEAD_QUICK_ENTRY_LAYOUT
+        doc.insert(ignore_permissions=True)
+
+
+def hide_irrelevant_upstream_fields():
+    """Hide B2B fields that are irrelevant to real estate workflow."""
+    fields_to_hide = [
+        "organization", "no_of_employees", "annual_revenue",
+        "industry", "website", "territory", "middle_name",
+        "gender", "salutation", "phone",
+        "facebook_lead_id", "facebook_form_id",
+    ]
+    for fieldname in fields_to_hide:
+        if not frappe.db.exists("DocField", {"parent": "CRM Lead", "fieldname": fieldname}):
+            continue
+        filters = {
+            "doc_type": "CRM Lead",
+            "field_name": fieldname,
+            "property": "hidden",
+        }
+        if frappe.db.exists("Property Setter", filters):
+            doc = frappe.get_doc("Property Setter", filters)
+        else:
+            doc = frappe.new_doc("Property Setter")
+            doc.doc_type = "CRM Lead"
+            doc.field_name = fieldname
+            doc.doctype_or_field = "DocField"
+            doc.property = "hidden"
+        doc.value = "1"
+        doc.property_type = "Check"
+        doc.save(ignore_permissions=True)
 
 
 def ensure_crm_lead_main_form_sections():

@@ -252,7 +252,7 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
     if interest_data:
         if isinstance(interest_data, str):
             interest_data = json.loads(interest_data)
-        for field in ["interested_unit_area", "area_unit", "preferred_area", "preferred_developer",
+        for field in ["area_unit", "preferred_unit_type", "preferred_area", "preferred_developer",
                       "preferred_compound", "preferred_finishing_type", "preferred_delivery_time", "buyer_budget"]:
             if field in interest_data:
                 doc.set(field, interest_data[field])
