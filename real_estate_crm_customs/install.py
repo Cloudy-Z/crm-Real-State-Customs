@@ -319,7 +319,6 @@ CRM_USER_CUSTOM_FIELDS = {
 LEAD_CONTACT_LAYOUT_FIELDS = [
     "lead_name",
     "mobile_no",
-    "phone",
     "whatsapp_number",
     "job_title",
     "selection_tier",
@@ -656,16 +655,17 @@ def ensure_real_estate_lead_statuses():
 
 
 def enforce_crm_lead_phone_mandatory():
-    """Make CRM Lead phone/mobile mandatory without editing the upstream CRM DocType JSON."""
+    """Ensure at least one phone field is present but NOT individually mandatory.
+    The client script validates that at least one of mobile_no, phone, or whatsapp_number is filled.
+    Remove any previously-set Property Setters that made these fields individually required."""
     for fieldname in ("mobile_no", "phone"):
-        if frappe.db.exists("DocField", {"parent": "CRM Lead", "fieldname": fieldname}):
-            make_property_setter(
-                "CRM Lead",
-                fieldname,
-                "reqd",
-                "1",
-                "Check",
-            )
+        filters = {
+            "doc_type": "CRM Lead",
+            "field_name": fieldname,
+            "property": "reqd",
+        }
+        if frappe.db.exists("Property Setter", filters):
+            frappe.delete_doc("Property Setter", filters, ignore_permissions=True, force=True)
 
 
 def make_property_setter(doc_type, field_name, property_name, value, property_type):
@@ -733,11 +733,8 @@ frappe.ui.form.on('Real Estate Unit', {
 CRM_LEAD_PHONE_AND_ASSIGN_SCRIPT = r"""
 frappe.ui.form.on('CRM Lead', {
     refresh(frm) {
-        ['mobile_no', 'phone'].forEach((fieldname) => {
-            if (frm.fields_dict[fieldname]) {
-                frm.set_df_property(fieldname, 'reqd', 1);
-            }
-        });
+        // Do NOT set mobile_no or phone as individually mandatory.
+        // Validation below ensures at least one phone field is filled.
 
         if (!frm.is_new() && frm.doc.party_type === 'Seller') {
             frm.add_custom_button(__('Assign Property Unit'), () => {
@@ -776,15 +773,19 @@ frappe.ui.form.on('CRM Lead', {
         }
     },
     validate(frm) {
-        const value = (frm.doc.mobile_no || frm.doc.phone || '').trim();
-        const phone_regex = /^\+(?=\d{10,13}$)\d{1,3}\d{7,10}$/;
+        // At least one of mobile_no, phone, or whatsapp_number must be filled
+        const mobile = (frm.doc.mobile_no || '').trim();
+        const phone = (frm.doc.phone || '').trim();
+        const whatsapp = (frm.doc.whatsapp_number || '').trim();
+        const value = mobile || phone || whatsapp;
         if (!value) {
-            frappe.msgprint(__('Mobile/phone number is mandatory. Please enter it in international format, for example +201001234567.'));
+            frappe.msgprint(__('At least one contact number is required: Mobile No, Phone, or WhatsApp Number. Please enter it in international format, for example +201001234567.'));
             frappe.validated = false;
             return;
         }
+        const phone_regex = /^\+(?=\d{10,13}$)\d{1,3}\d{7,10}$/;
         if (!phone_regex.test(value)) {
-            frappe.msgprint(__('Invalid mobile/phone format. Use international format with a leading +, a 1-to-3 digit country code, and a 7-to-10 digit local number. The numeric part must contain 10 to 13 digits. Example: +201001234567.'));
+            frappe.msgprint(__('Invalid phone format. Use international format with a leading +, a 1-to-3 digit country code, and a 7-to-10 digit local number. The numeric part must contain 10 to 13 digits. Example: +201001234567.'));
             frappe.validated = false;
         }
     },
