@@ -26,11 +26,27 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "in_standard_filter": 1,
         },
         {
+            "fieldname": "mobile_country_code",
+            "label": "Mobile Country Code",
+            "fieldtype": "Select",
+            "options": "\n+20\n+966\n+971\n+974\n+973\n+968\n+965\n+962\n+961\n+963\n+964\n+212\n+216\n+213\n+218\n+249\n+1\n+44\n+49\n+33\n+39\n+34\n+31\n+90\n+91\n+92\n+86\n+81\n+82\n+61\n+7",
+            "default": "+20",
+            "insert_after": "website",
+        },
+        {
+            "fieldname": "whatsapp_country_code",
+            "label": "WhatsApp Country Code",
+            "fieldtype": "Select",
+            "options": "\n+20\n+966\n+971\n+974\n+973\n+968\n+965\n+962\n+961\n+963\n+964\n+212\n+216\n+213\n+218\n+249\n+1\n+44\n+49\n+33\n+39\n+34\n+31\n+90\n+91\n+92\n+86\n+81\n+82\n+61\n+7",
+            "default": "+20",
+            "insert_after": "party_type",
+        },
+        {
             "fieldname": "whatsapp_number",
             "label": "WhatsApp Number",
             "fieldtype": "Data",
-            "options": "Phone",
-            "insert_after": "party_type",
+            "insert_after": "whatsapp_country_code",
+            "description": "Enter number without country code (e.g. 1001234567)",
         },
         {
             "fieldname": "selection_tier",
@@ -345,7 +361,9 @@ DEFAULT_CRM_LEAD_SIDE_PANEL_LAYOUT = [
                     "first_name",
                     "last_name",
                     "email",
+                    "mobile_country_code",
                     "mobile_no",
+                    "whatsapp_country_code",
                     "whatsapp_number",
                     "lead_owner",
                     "source",
@@ -766,16 +784,33 @@ frappe.ui.form.on('CRM Lead', {
         // At least one of mobile_no or whatsapp_number must be filled
         const mobile = (frm.doc.mobile_no || '').trim();
         const whatsapp = (frm.doc.whatsapp_number || '').trim();
-        const value = mobile || whatsapp;
-        if (!value) {
-            frappe.msgprint(__('At least one contact number is required: Mobile No or WhatsApp Number. Please enter it in international format, for example +201001234567.'));
+        if (!mobile && !whatsapp) {
+            frappe.msgprint(__('At least one contact number is required: Mobile No or WhatsApp Number.'));
             frappe.validated = false;
             return;
         }
-        const phone_regex = /^\+(?=\d{10,13}$)\d{1,3}\d{7,10}$/;
-        if (!phone_regex.test(value)) {
-            frappe.msgprint(__('Invalid phone format. Use international format with a leading +, a 1-to-3 digit country code, and a 7-to-10 digit local number. The numeric part must contain 10 to 13 digits. Example: +201001234567.'));
+        // Validate number format: digits only, 7-12 digits (local number without country code)
+        const number_regex = /^\d{7,12}$/;
+        if (mobile && !number_regex.test(mobile)) {
+            frappe.msgprint(__('Mobile No should contain only digits (7-12 digits, without country code). Example: 1001234567'));
             frappe.validated = false;
+            return;
+        }
+        if (whatsapp && !number_regex.test(whatsapp)) {
+            frappe.msgprint(__('WhatsApp Number should contain only digits (7-12 digits, without country code). Example: 1001234567'));
+            frappe.validated = false;
+            return;
+        }
+        // Ensure country code is selected when number is provided
+        if (mobile && !frm.doc.mobile_country_code) {
+            frappe.msgprint(__('Please select a Country Code for Mobile No.'));
+            frappe.validated = false;
+            return;
+        }
+        if (whatsapp && !frm.doc.whatsapp_country_code) {
+            frappe.msgprint(__('Please select a Country Code for WhatsApp Number.'));
+            frappe.validated = false;
+            return;
         }
     },
 });
@@ -804,7 +839,7 @@ LEAD_QUICK_ENTRY_LAYOUT = json.dumps([
     {
         "name": "contact_section",
         "columns": [
-            {"name": "col_phone", "fields": ["mobile_no", "whatsapp_number"]},
+            {"name": "col_phone", "fields": ["mobile_country_code", "mobile_no", "whatsapp_country_code", "whatsapp_number"]},
             {"name": "col_email", "fields": ["email"]},
         ],
     },
