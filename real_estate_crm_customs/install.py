@@ -567,8 +567,6 @@ REAL_ESTATE_QUICK_FILTERS = {
         "seller_unit_type",
         "seller_developer",
         "selection_tier",
-        "next_event_window",
-        "event_status_lifecycle",
     ],
     "Real Estate Unit": ["sku", "project", "developer", "unit_type", "floor", "finishing_type", "status", "owner_lead"],
     "Property Developer": ["developer_name", "company_registration"],

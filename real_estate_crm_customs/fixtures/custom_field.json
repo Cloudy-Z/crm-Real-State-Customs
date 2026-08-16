@@ -66,31 +66,10 @@
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
-  "fieldname": "lead_age",
-  "label": "Lead Age",
-  "fieldtype": "Data",
-  "insert_after": "selection_tier",
-  "read_only": 1,
-  "description": "Auto-updated every hour by the system.",
-  "name": "CRM Lead-lead_age"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
-  "fieldname": "is_primary_buyer",
-  "label": "Primary Buyer",
-  "fieldtype": "Check",
-  "insert_after": "lead_age",
-  "depends_on": "eval:doc.party_type == 'Buyer'",
-  "name": "CRM Lead-is_primary_buyer"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
   "fieldname": "buyer_requirements_section",
   "label": "Buyer Requirements and Search Filters",
   "fieldtype": "Section Break",
-  "insert_after": "is_primary_buyer",
+  "insert_after": "selection_tier",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "collapsible": 1,
   "name": "CRM Lead-buyer_requirements_section"
@@ -184,6 +163,27 @@
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
+  "fieldname": "lead_age",
+  "label": "Lead Age",
+  "fieldtype": "Data",
+  "insert_after": "preferred_delivery_time",
+  "read_only": 1,
+  "description": "Auto-updated every hour by the system.",
+  "name": "CRM Lead-lead_age"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "is_primary_buyer",
+  "label": "Primary Buyer",
+  "fieldtype": "Check",
+  "insert_after": "lead_age",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-is_primary_buyer"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
   "fieldname": "no_answer_first_call",
   "label": "No Answer \u2013 1st Call",
   "fieldtype": "Check",
@@ -258,6 +258,121 @@
   "insert_after": "last_call_at",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "name": "CRM Lead-interested_in_units"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "seller_property_section",
+  "label": "Seller Property Onboarding",
+  "fieldtype": "Section Break",
+  "insert_after": "interested_in_units",
+  "depends_on": "eval:doc.party_type == 'Seller'",
+  "collapsible": 1,
+  "name": "CRM Lead-seller_property_section"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "property_title",
+  "label": "Property Title / Designation",
+  "fieldtype": "Data",
+  "insert_after": "seller_property_section",
+  "depends_on": "eval:doc.party_type == 'Seller'",
+  "name": "CRM Lead-property_title"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "target_asking_price",
+  "label": "Target Asking Price",
+  "fieldtype": "Currency",
+  "insert_after": "property_title",
+  "depends_on": "eval:doc.party_type == 'Seller'",
+  "name": "CRM Lead-target_asking_price"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "property_code",
+  "label": "Property Code / Assigned SKU",
+  "fieldtype": "Data",
+  "insert_after": "target_asking_price",
+  "depends_on": "eval:doc.party_type == 'Seller'",
+  "name": "CRM Lead-property_code"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "location_reference",
+  "label": "Location Reference",
+  "fieldtype": "Data",
+  "insert_after": "property_code",
+  "depends_on": "eval:doc.party_type == 'Seller'",
+  "name": "CRM Lead-location_reference"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "seller_compound",
+  "label": "Compound / Project",
+  "fieldtype": "Link",
+  "options": "Real Estate Project",
+  "insert_after": "location_reference",
+  "depends_on": "eval:doc.party_type == 'Seller'",
+  "name": "CRM Lead-seller_compound"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "seller_developer",
+  "label": "Developer",
+  "fieldtype": "Link",
+  "options": "Property Developer",
+  "insert_after": "seller_compound",
+  "depends_on": "eval:doc.party_type == 'Seller'",
+  "name": "CRM Lead-seller_developer"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "seller_unit_type",
+  "label": "Unit Type",
+  "fieldtype": "Select",
+  "options": "\nStandalone Villa\nPenthouse\nStudio\nApartment\nDuplex\nTownhouse\nChalet",
+  "insert_after": "seller_developer",
+  "depends_on": "eval:doc.party_type == 'Seller'",
+  "name": "CRM Lead-seller_unit_type"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "unit_area",
+  "label": "Unit Area",
+  "fieldtype": "Float",
+  "insert_after": "seller_unit_type",
+  "depends_on": "eval:doc.party_type == 'Seller'",
+  "name": "CRM Lead-unit_area"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "seller_finishing_type",
+  "label": "Finishing Type",
+  "fieldtype": "Select",
+  "options": "\nCore & Shell\nSemi-Finished\nFully Finished",
+  "insert_after": "unit_area",
+  "depends_on": "eval:doc.party_type == 'Seller'",
+  "name": "CRM Lead-seller_finishing_type"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "property_documents",
+  "label": "Property Documents & Deed Upload",
+  "fieldtype": "Attach",
+  "insert_after": "seller_finishing_type",
+  "depends_on": "eval:doc.party_type == 'Seller'",
+  "name": "CRM Lead-property_documents"
  },
  {
   "doctype": "Custom Field",
