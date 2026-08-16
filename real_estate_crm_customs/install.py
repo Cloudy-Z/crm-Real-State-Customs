@@ -44,9 +44,8 @@ CRM_LEAD_CUSTOM_FIELDS = {
         {
             "fieldname": "whatsapp_number",
             "label": "WhatsApp Number",
-            "fieldtype": "Data",
+            "fieldtype": "Phone",
             "insert_after": "whatsapp_country_code",
-            "description": "Enter number without country code (e.g. 1001234567)",
         },
         {
             "fieldname": "selection_tier",

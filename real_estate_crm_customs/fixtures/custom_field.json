@@ -49,9 +49,8 @@
   "dt": "CRM Lead",
   "fieldname": "whatsapp_number",
   "label": "WhatsApp Number",
-  "fieldtype": "Data",
+  "fieldtype": "Phone",
   "insert_after": "whatsapp_country_code",
-  "description": "Enter number without country code (e.g. 1001234567)",
   "name": "CRM Lead-whatsapp_number"
  },
  {
@@ -68,11 +67,11 @@
   "doctype": "Custom Field",
   "dt": "CRM Lead",
   "fieldname": "lead_age",
-  "label": "Lead Age (hours)",
-  "fieldtype": "Int",
+  "label": "Lead Age",
+  "fieldtype": "Data",
   "insert_after": "selection_tier",
   "read_only": 1,
-  "description": "Automatically updated every hour",
+  "description": "Auto-updated every hour by the system.",
   "name": "CRM Lead-lead_age"
  },
  {
