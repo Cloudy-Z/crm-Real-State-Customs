@@ -638,12 +638,16 @@ def enforce_crm_lead_phone_mandatory():
         existing = frappe.db.get_value("Property Setter", filters, "name")
         if existing:
             frappe.delete_doc("Property Setter", existing, ignore_permissions=True, force=True)
+            frappe.db.commit()
         # Explicitly set reqd=0
         make_property_setter("CRM Lead", fieldname, "reqd", "0", "Check")
 
     # Completely hide the 'phone' field — we only use mobile_no + whatsapp_number
     if frappe.db.exists("DocField", {"parent": "CRM Lead", "fieldname": "phone"}):
         make_property_setter("CRM Lead", "phone", "hidden", "1", "Check")
+
+    # Clear DocType cache so the schema changes take effect immediately
+    frappe.clear_cache(doctype="CRM Lead")
 
 
 def make_property_setter(doc_type, field_name, property_name, value, property_type):
@@ -652,8 +656,9 @@ def make_property_setter(doc_type, field_name, property_name, value, property_ty
         "field_name": field_name,
         "property": property_name,
     }
-    if frappe.db.exists("Property Setter", filters):
-        doc = frappe.get_doc("Property Setter", filters)
+    existing_name = frappe.db.get_value("Property Setter", filters, "name")
+    if existing_name:
+        doc = frappe.get_doc("Property Setter", existing_name)
     else:
         doc = frappe.new_doc("Property Setter")
         doc.doc_type = doc_type
@@ -663,6 +668,7 @@ def make_property_setter(doc_type, field_name, property_name, value, property_ty
     doc.value = value
     doc.property_type = property_type
     doc.save(ignore_permissions=True)
+    frappe.db.commit()
 
 
 def setup_real_estate_client_scripts():
