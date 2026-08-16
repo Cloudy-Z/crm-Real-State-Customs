@@ -293,7 +293,8 @@ CRM_USER_CUSTOM_FIELDS = {
         {
             "fieldname": "real_estate_agent_whatsapp_number",
             "label": "Agent WhatsApp Number",
-            "fieldtype": "Phone",
+            "fieldtype": "Data",
+            "options": "Phone",
             "insert_after": "real_estate_agent_outreach_section",
         },
         {
@@ -644,6 +645,7 @@ def setup_user_agent_custom_fields():
     if not frappe.db.exists("DocType", "User"):
         return
 
+    _fix_fieldtype_mismatches("User", CRM_USER_CUSTOM_FIELDS.get("User", []))
     create_custom_fields(CRM_USER_CUSTOM_FIELDS, update=True)
     frappe.clear_cache(doctype="User")
 
