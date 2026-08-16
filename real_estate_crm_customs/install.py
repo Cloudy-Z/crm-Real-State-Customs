@@ -625,21 +625,25 @@ def ensure_real_estate_lead_statuses():
 
 
 def enforce_crm_lead_phone_mandatory():
-    """Ensure at least one phone field is present but NOT individually mandatory.
-    The client script validates that at least one of mobile_no, phone, or whatsapp_number is filled.
-    Remove any previously-set Property Setters that made these fields individually required."""
+    """Keep only mobile_no as the single phone field. Hide 'phone' completely.
+    mobile_no is NOT individually mandatory — the client script validates
+    that at least one of mobile_no or whatsapp_number is filled."""
+    # Remove any reqd Property Setters for both fields
     for fieldname in ("mobile_no", "phone"):
         filters = {
             "doc_type": "CRM Lead",
             "field_name": fieldname,
             "property": "reqd",
         }
-        # Find and delete existing reqd Property Setters
         existing = frappe.db.get_value("Property Setter", filters, "name")
         if existing:
             frappe.delete_doc("Property Setter", existing, ignore_permissions=True, force=True)
-        # Also explicitly set reqd=0 to override any cached state
+        # Explicitly set reqd=0
         make_property_setter("CRM Lead", fieldname, "reqd", "0", "Check")
+
+    # Completely hide the 'phone' field — we only use mobile_no + whatsapp_number
+    if frappe.db.exists("DocField", {"parent": "CRM Lead", "fieldname": "phone"}):
+        make_property_setter("CRM Lead", "phone", "hidden", "1", "Check")
 
 
 def make_property_setter(doc_type, field_name, property_name, value, property_type):
@@ -747,13 +751,12 @@ frappe.ui.form.on('CRM Lead', {
         }
     },
     validate(frm) {
-        // At least one of mobile_no, phone, or whatsapp_number must be filled
+        // At least one of mobile_no or whatsapp_number must be filled
         const mobile = (frm.doc.mobile_no || '').trim();
-        const phone = (frm.doc.phone || '').trim();
         const whatsapp = (frm.doc.whatsapp_number || '').trim();
-        const value = mobile || phone || whatsapp;
+        const value = mobile || whatsapp;
         if (!value) {
-            frappe.msgprint(__('At least one contact number is required: Mobile No, Phone, or WhatsApp Number. Please enter it in international format, for example +201001234567.'));
+            frappe.msgprint(__('At least one contact number is required: Mobile No or WhatsApp Number. Please enter it in international format, for example +201001234567.'));
             frappe.validated = false;
             return;
         }
