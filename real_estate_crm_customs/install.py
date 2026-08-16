@@ -628,18 +628,20 @@ def enforce_crm_lead_phone_mandatory():
     """Keep only mobile_no as the single phone field. Hide 'phone' completely.
     mobile_no is NOT individually mandatory — the client script validates
     that at least one of mobile_no or whatsapp_number is filled."""
-    # Remove any reqd Property Setters for both fields
+
+    # AGGRESSIVE CLEANUP: Use direct SQL to delete ALL reqd Property Setters
+    # for phone and mobile_no. This handles edge cases where multiple Property
+    # Setters exist or ORM-based deletion fails silently.
+    frappe.db.sql("""
+        DELETE FROM `tabProperty Setter`
+        WHERE doc_type = 'CRM Lead'
+        AND field_name IN ('phone', 'mobile_no')
+        AND property = 'reqd'
+    """)
+    frappe.db.commit()
+
+    # Now create clean Property Setters with reqd=0
     for fieldname in ("mobile_no", "phone"):
-        filters = {
-            "doc_type": "CRM Lead",
-            "field_name": fieldname,
-            "property": "reqd",
-        }
-        existing = frappe.db.get_value("Property Setter", filters, "name")
-        if existing:
-            frappe.delete_doc("Property Setter", existing, ignore_permissions=True, force=True)
-            frappe.db.commit()
-        # Explicitly set reqd=0
         make_property_setter("CRM Lead", fieldname, "reqd", "0", "Check")
 
     # Completely hide the 'phone' field — we only use mobile_no + whatsapp_number
