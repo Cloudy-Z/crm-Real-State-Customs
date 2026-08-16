@@ -625,28 +625,31 @@ def ensure_real_estate_lead_statuses():
 
 
 def enforce_crm_lead_phone_mandatory():
-    """Keep only mobile_no as the single phone field. Hide 'phone' completely.
-    mobile_no is NOT individually mandatory — the client script validates
-    that at least one of mobile_no or whatsapp_number is filled."""
+    """Ensure mobile_no is NOT individually mandatory.
+    The 'phone' field has been removed from the DocType entirely.
+    mobile_no + whatsapp_number are the only contact fields.
+    Client script validates that at least one is filled."""
 
-    # AGGRESSIVE CLEANUP: Use direct SQL to delete ALL reqd Property Setters
-    # for phone and mobile_no. This handles edge cases where multiple Property
-    # Setters exist or ORM-based deletion fails silently.
+    # AGGRESSIVE CLEANUP: Remove ALL legacy Property Setters for phone/mobile_no reqd
+    # This handles old migrations that set reqd=1 and any duplicates.
     frappe.db.sql("""
         DELETE FROM `tabProperty Setter`
         WHERE doc_type = 'CRM Lead'
         AND field_name IN ('phone', 'mobile_no')
-        AND property = 'reqd'
+        AND property IN ('reqd', 'hidden')
     """)
     frappe.db.commit()
 
-    # Now create clean Property Setters with reqd=0
-    for fieldname in ("mobile_no", "phone"):
-        make_property_setter("CRM Lead", fieldname, "reqd", "0", "Check")
+    # Ensure mobile_no is explicitly not mandatory
+    make_property_setter("CRM Lead", "mobile_no", "reqd", "0", "Check")
 
-    # Completely hide the 'phone' field — we only use mobile_no + whatsapp_number
-    if frappe.db.exists("DocField", {"parent": "CRM Lead", "fieldname": "phone"}):
-        make_property_setter("CRM Lead", "phone", "hidden", "1", "Check")
+    # Also drop the phone column from the database if it still exists
+    # (since the field was removed from the DocType JSON)
+    try:
+        if frappe.db.has_column("CRM Lead", "phone"):
+            frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` DROP COLUMN `phone`")
+    except Exception:
+        pass  # Column may already be gone
 
     # Clear DocType cache so the schema changes take effect immediately
     frappe.clear_cache(doctype="CRM Lead")
@@ -842,7 +845,7 @@ def hide_irrelevant_upstream_fields():
     fields_to_hide = [
         "organization", "no_of_employees", "annual_revenue",
         "industry", "website", "territory", "middle_name",
-        "gender", "salutation", "phone",
+        "gender", "salutation",
         "facebook_lead_id", "facebook_form_id",
     ]
     for fieldname in fields_to_hide:
