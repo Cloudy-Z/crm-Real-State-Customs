@@ -28,7 +28,8 @@ CRM_LEAD_CUSTOM_FIELDS = {
         {
             "fieldname": "whatsapp_number",
             "label": "WhatsApp Number",
-            "fieldtype": "Phone",
+            "fieldtype": "Data",
+            "options": "Phone",
             "insert_after": "party_type",
         },
         {
