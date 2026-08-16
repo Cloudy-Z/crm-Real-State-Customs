@@ -26,26 +26,10 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "in_standard_filter": 1,
         },
         {
-            "fieldname": "mobile_country_code",
-            "label": "Mobile Country Code",
-            "fieldtype": "Select",
-            "options": "\n+20\n+966\n+971\n+974\n+973\n+968\n+965\n+962\n+961\n+963\n+964\n+212\n+216\n+213\n+218\n+249\n+1\n+44\n+49\n+33\n+39\n+34\n+31\n+90\n+91\n+92\n+86\n+81\n+82\n+61\n+7",
-            "default": "+20",
-            "insert_after": "email",
-        },
-        {
-            "fieldname": "whatsapp_country_code",
-            "label": "WhatsApp Country Code",
-            "fieldtype": "Select",
-            "options": "\n+20\n+966\n+971\n+974\n+973\n+968\n+965\n+962\n+961\n+963\n+964\n+212\n+216\n+213\n+218\n+249\n+1\n+44\n+49\n+33\n+39\n+34\n+31\n+90\n+91\n+92\n+86\n+81\n+82\n+61\n+7",
-            "default": "+20",
-            "insert_after": "mobile_no",
-        },
-        {
             "fieldname": "whatsapp_number",
             "label": "WhatsApp Number",
-            "fieldtype": "Data",
-            "insert_after": "whatsapp_country_code",
+            "fieldtype": "Phone",
+            "insert_after": "mobile_no",
         },
         {
             "fieldname": "selection_tier",
@@ -360,9 +344,7 @@ DEFAULT_CRM_LEAD_SIDE_PANEL_LAYOUT = [
                     "first_name",
                     "last_name",
                     "email",
-                    "mobile_country_code",
                     "mobile_no",
-                    "whatsapp_country_code",
                     "whatsapp_number",
                     "lead_owner",
                     "source",
@@ -614,6 +596,9 @@ def setup_crm_lead_custom_fields():
     # Frappe does not allow fieldtype changes via create_custom_fields(update=True)
     _fix_fieldtype_mismatches("CRM Lead", CRM_LEAD_CUSTOM_FIELDS.get("CRM Lead", []))
 
+    # Remove deprecated country code fields (replaced by Phone fieldtype's built-in picker)
+    _remove_deprecated_custom_fields("CRM Lead", ["mobile_country_code", "whatsapp_country_code"])
+
     create_custom_fields(CRM_LEAD_CUSTOM_FIELDS, update=True)
     frappe.clear_cache(doctype="CRM Lead")
 
@@ -636,6 +621,20 @@ def _fix_fieldtype_mismatches(doctype, field_definitions):
                         pass
                 frappe.delete_doc("Custom Field", cf_name, ignore_permissions=True, force=True)
                 frappe.db.commit()
+
+
+def _remove_deprecated_custom_fields(doctype, fieldnames):
+    """Remove Custom Fields that are no longer needed."""
+    for fieldname in fieldnames:
+        cf_name = f"{doctype}-{fieldname}"
+        if frappe.db.exists("Custom Field", cf_name):
+            if frappe.db.has_column(doctype, fieldname):
+                try:
+                    frappe.db.sql_ddl(f"ALTER TABLE `tab{doctype}` DROP COLUMN `{fieldname}`")
+                except Exception:
+                    pass
+            frappe.delete_doc("Custom Field", cf_name, ignore_permissions=True, force=True)
+            frappe.db.commit()
 
 
 def setup_user_agent_custom_fields():
@@ -811,29 +810,6 @@ frappe.ui.form.on('CRM Lead', {
             frappe.validated = false;
             return;
         }
-        // Validate number format: digits only, 7-12 digits (local number without country code)
-        const number_regex = /^\d{7,12}$/;
-        if (mobile && !number_regex.test(mobile)) {
-            frappe.msgprint(__('Mobile No should contain only digits (7-12 digits, without country code). Example: 1001234567'));
-            frappe.validated = false;
-            return;
-        }
-        if (whatsapp && !number_regex.test(whatsapp)) {
-            frappe.msgprint(__('WhatsApp Number should contain only digits (7-12 digits, without country code). Example: 1001234567'));
-            frappe.validated = false;
-            return;
-        }
-        // Ensure country code is selected when number is provided
-        if (mobile && !frm.doc.mobile_country_code) {
-            frappe.msgprint(__('Please select a Country Code for Mobile No.'));
-            frappe.validated = false;
-            return;
-        }
-        if (whatsapp && !frm.doc.whatsapp_country_code) {
-            frappe.msgprint(__('Please select a Country Code for WhatsApp Number.'));
-            frappe.validated = false;
-            return;
-        }
     },
 });
 """
@@ -861,7 +837,7 @@ LEAD_QUICK_ENTRY_LAYOUT = json.dumps([
     {
         "name": "contact_section",
         "columns": [
-            {"name": "col_phone", "fields": ["mobile_country_code", "mobile_no", "whatsapp_country_code", "whatsapp_number"]},
+            {"name": "col_phone", "fields": ["mobile_no", "whatsapp_number"]},
             {"name": "col_email", "fields": ["email"]},
         ],
     },

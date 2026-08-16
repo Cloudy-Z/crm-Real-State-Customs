@@ -77,16 +77,9 @@ def _validate_buyer_lead(lead_doc):
 
 
 def _lead_contact_number(lead_doc):
-    """Return full international phone number (country code + local number)."""
-    wa_code = lead_doc.get("whatsapp_country_code") or ""
-    wa_number = lead_doc.get("whatsapp_number") or ""
-    mobile_code = lead_doc.get("mobile_country_code") or ""
-    mobile_number = lead_doc.get("mobile_no") or ""
-    if wa_number:
-        return (wa_code + wa_number).strip()
-    if mobile_number:
-        return (mobile_code + mobile_number).strip()
-    return None
+    """Return full international phone number.
+    Phone fieldtype stores the complete number with country code (e.g. +201070009839)."""
+    return lead_doc.get("whatsapp_number") or lead_doc.get("mobile_no") or None
 
 
 def _resolve_assigned_agent_identity(lead_doc):
