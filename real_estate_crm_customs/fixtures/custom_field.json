@@ -25,19 +25,33 @@
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
-  "fieldname": "interests_summary",
-  "label": "Interests Summary",
-  "fieldtype": "Small Text",
-  "insert_after": "party_type",
-  "name": "CRM Lead-interests_summary"
+  "fieldname": "mobile_country_code",
+  "label": "Mobile Country Code",
+  "fieldtype": "Select",
+  "options": "\n+20\n+966\n+971\n+974\n+973\n+968\n+965\n+962\n+961\n+963\n+964\n+212\n+216\n+213\n+218\n+249\n+1\n+44\n+49\n+33\n+39\n+34\n+31\n+90\n+91\n+92\n+86\n+81\n+82\n+61\n+7",
+  "default": "+20",
+  "insert_after": "email",
+  "name": "CRM Lead-mobile_country_code"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "whatsapp_country_code",
+  "label": "WhatsApp Country Code",
+  "fieldtype": "Select",
+  "options": "\n+20\n+966\n+971\n+974\n+973\n+968\n+965\n+962\n+961\n+963\n+964\n+212\n+216\n+213\n+218\n+249\n+1\n+44\n+49\n+33\n+39\n+34\n+31\n+90\n+91\n+92\n+86\n+81\n+82\n+61\n+7",
+  "default": "+20",
+  "insert_after": "mobile_no",
+  "name": "CRM Lead-whatsapp_country_code"
  },
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
   "fieldname": "whatsapp_number",
   "label": "WhatsApp Number",
-  "fieldtype": "Phone",
-  "insert_after": "interests_summary",
+  "fieldtype": "Data",
+  "insert_after": "whatsapp_country_code",
+  "description": "Enter number without country code (e.g. 1001234567)",
   "name": "CRM Lead-whatsapp_number"
  },
  {
@@ -53,21 +67,23 @@
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
-  "fieldname": "next_event_window",
-  "label": "Next Event Window",
-  "fieldtype": "Datetime",
+  "fieldname": "lead_age",
+  "label": "Lead Age (hours)",
+  "fieldtype": "Int",
   "insert_after": "selection_tier",
-  "name": "CRM Lead-next_event_window"
+  "read_only": 1,
+  "description": "Automatically updated every hour",
+  "name": "CRM Lead-lead_age"
  },
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
-  "fieldname": "event_status_lifecycle",
-  "label": "Event Status Lifecycle",
-  "fieldtype": "Select",
-  "options": "\nScheduled\nCompleted\nPostponed\nNo Show",
-  "insert_after": "next_event_window",
-  "name": "CRM Lead-event_status_lifecycle"
+  "fieldname": "is_primary_buyer",
+  "label": "Primary Buyer",
+  "fieldtype": "Check",
+  "insert_after": "lead_age",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-is_primary_buyer"
  },
  {
   "doctype": "Custom Field",
@@ -75,7 +91,7 @@
   "fieldname": "buyer_requirements_section",
   "label": "Buyer Requirements and Search Filters",
   "fieldtype": "Section Break",
-  "insert_after": "event_status_lifecycle",
+  "insert_after": "is_primary_buyer",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "collapsible": 1,
   "name": "CRM Lead-buyer_requirements_section"
@@ -93,22 +109,12 @@
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
-  "fieldname": "interested_unit_area",
-  "label": "Interested Unit Area",
-  "fieldtype": "Float",
-  "insert_after": "buyer_budget",
-  "depends_on": "eval:doc.party_type == 'Buyer'",
-  "name": "CRM Lead-interested_unit_area"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
   "fieldname": "area_unit",
   "label": "Area Unit",
   "fieldtype": "Select",
   "options": "Sq M\nSq Ft",
   "default": "Sq M",
-  "insert_after": "interested_unit_area",
+  "insert_after": "buyer_budget",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "name": "CRM Lead-area_unit"
  },
@@ -180,8 +186,8 @@
   "doctype": "Custom Field",
   "dt": "CRM Lead",
   "fieldname": "no_answer_first_call",
-  "label": "Current No Answer – 1st Call",
-  "fieldtype": "Int",
+  "label": "No Answer – 1st Call Flag",
+  "fieldtype": "Check",
   "insert_after": "preferred_delivery_time",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "read_only": 1,
@@ -191,8 +197,8 @@
   "doctype": "Custom Field",
   "dt": "CRM Lead",
   "fieldname": "no_answer_second_call",
-  "label": "Current No Answer – 2nd Call",
-  "fieldtype": "Int",
+  "label": "No Answer – 2nd Call Flag",
+  "fieldtype": "Check",
   "insert_after": "no_answer_first_call",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "read_only": 1,
@@ -269,7 +275,8 @@
   "dt": "User",
   "fieldname": "real_estate_agent_whatsapp_number",
   "label": "Agent WhatsApp Number",
-  "fieldtype": "Phone",
+  "fieldtype": "Data",
+  "options": "Phone",
   "insert_after": "real_estate_agent_outreach_section",
   "name": "User-real_estate_agent_whatsapp_number"
  },

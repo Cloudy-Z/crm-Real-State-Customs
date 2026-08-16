@@ -31,7 +31,7 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "fieldtype": "Select",
             "options": "\n+20\n+966\n+971\n+974\n+973\n+968\n+965\n+962\n+961\n+963\n+964\n+212\n+216\n+213\n+218\n+249\n+1\n+44\n+49\n+33\n+39\n+34\n+31\n+90\n+91\n+92\n+86\n+81\n+82\n+61\n+7",
             "default": "+20",
-            "insert_after": "website",
+            "insert_after": "email",
         },
         {
             "fieldname": "whatsapp_country_code",
@@ -39,7 +39,7 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "fieldtype": "Select",
             "options": "\n+20\n+966\n+971\n+974\n+973\n+968\n+965\n+962\n+961\n+963\n+964\n+212\n+216\n+213\n+218\n+249\n+1\n+44\n+49\n+33\n+39\n+34\n+31\n+90\n+91\n+92\n+86\n+81\n+82\n+61\n+7",
             "default": "+20",
-            "insert_after": "party_type",
+            "insert_after": "mobile_no",
         },
         {
             "fieldname": "whatsapp_number",
