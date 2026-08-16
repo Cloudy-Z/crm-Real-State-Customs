@@ -634,8 +634,12 @@ def enforce_crm_lead_phone_mandatory():
             "field_name": fieldname,
             "property": "reqd",
         }
-        if frappe.db.exists("Property Setter", filters):
-            frappe.delete_doc("Property Setter", filters, ignore_permissions=True, force=True)
+        # Find and delete existing reqd Property Setters
+        existing = frappe.db.get_value("Property Setter", filters, "name")
+        if existing:
+            frappe.delete_doc("Property Setter", existing, ignore_permissions=True, force=True)
+        # Also explicitly set reqd=0 to override any cached state
+        make_property_setter("CRM Lead", fieldname, "reqd", "0", "Check")
 
 
 def make_property_setter(doc_type, field_name, property_name, value, property_type):
