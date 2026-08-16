@@ -612,8 +612,32 @@ def setup_crm_lead_custom_fields():
     if not frappe.db.exists("DocType", "CRM Lead"):
         frappe.throw("CRM Lead DocType was not found. Install Frappe CRM before installing this custom app.")
 
+    # Pre-cleanup: delete Custom Fields whose fieldtype has changed
+    # Frappe does not allow fieldtype changes via create_custom_fields(update=True)
+    _fix_fieldtype_mismatches("CRM Lead", CRM_LEAD_CUSTOM_FIELDS.get("CRM Lead", []))
+
     create_custom_fields(CRM_LEAD_CUSTOM_FIELDS, update=True)
     frappe.clear_cache(doctype="CRM Lead")
+
+
+def _fix_fieldtype_mismatches(doctype, field_definitions):
+    """Delete existing Custom Fields whose fieldtype doesn't match the desired definition.
+    This allows create_custom_fields to recreate them with the correct type."""
+    for field_def in field_definitions:
+        fieldname = field_def.get("fieldname")
+        desired_type = field_def.get("fieldtype")
+        cf_name = f"{doctype}-{fieldname}"
+        if frappe.db.exists("Custom Field", cf_name):
+            existing_type = frappe.db.get_value("Custom Field", cf_name, "fieldtype")
+            if existing_type and existing_type != desired_type:
+                # Drop the DB column first to avoid schema conflicts
+                if frappe.db.has_column(doctype, fieldname):
+                    try:
+                        frappe.db.sql_ddl(f"ALTER TABLE `tab{doctype}` DROP COLUMN `{fieldname}`")
+                    except Exception:
+                        pass
+                frappe.delete_doc("Custom Field", cf_name, ignore_permissions=True, force=True)
+                frappe.db.commit()
 
 
 def setup_user_agent_custom_fields():
