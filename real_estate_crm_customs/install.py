@@ -44,7 +44,7 @@ CRM_LEAD_CUSTOM_FIELDS = {
         {
             "fieldname": "whatsapp_number",
             "label": "WhatsApp Number",
-            "fieldtype": "Phone",
+            "fieldtype": "Data",
             "insert_after": "whatsapp_country_code",
         },
         {
@@ -293,7 +293,7 @@ CRM_USER_CUSTOM_FIELDS = {
         {
             "fieldname": "real_estate_agent_whatsapp_number",
             "label": "Agent WhatsApp Number",
-            "fieldtype": "Phone",
+            "fieldtype": "Data",
             "insert_after": "real_estate_agent_outreach_section",
         },
         {

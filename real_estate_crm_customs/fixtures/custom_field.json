@@ -49,7 +49,7 @@
   "dt": "CRM Lead",
   "fieldname": "whatsapp_number",
   "label": "WhatsApp Number",
-  "fieldtype": "Phone",
+  "fieldtype": "Data",
   "insert_after": "whatsapp_country_code",
   "name": "CRM Lead-whatsapp_number"
  },
@@ -389,7 +389,7 @@
   "dt": "User",
   "fieldname": "real_estate_agent_whatsapp_number",
   "label": "Agent WhatsApp Number",
-  "fieldtype": "Phone",
+  "fieldtype": "Data",
   "insert_after": "real_estate_agent_outreach_section",
   "name": "User-real_estate_agent_whatsapp_number"
  },
