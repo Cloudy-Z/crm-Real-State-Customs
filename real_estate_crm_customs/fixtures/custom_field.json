@@ -29,8 +29,7 @@
   "label": "WhatsApp Number",
   "fieldtype": "Phone",
   "insert_after": "mobile_no",
-  "name": "CRM Lead-whatsapp_number",
-  "length": 20
+  "name": "CRM Lead-whatsapp_number"
  },
  {
   "doctype": "Custom Field",
