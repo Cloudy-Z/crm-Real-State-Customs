@@ -671,12 +671,12 @@ def enforce_crm_lead_phone_mandatory():
     Client script validates that at least one is filled."""
 
     # AGGRESSIVE CLEANUP: Remove ALL legacy Property Setters for phone/mobile_no
-    # This handles old migrations that set reqd=1, unique=1, or hidden and any duplicates.
+    # This handles old migrations that set reqd=1, unique=1, hidden, or length overrides.
     frappe.db.sql("""
         DELETE FROM `tabProperty Setter`
         WHERE doc_type = 'CRM Lead'
         AND field_name IN ('phone', 'mobile_no')
-        AND property IN ('reqd', 'hidden', 'unique')
+        AND property IN ('reqd', 'hidden', 'unique', 'length')
     """)
     frappe.db.commit()
 
