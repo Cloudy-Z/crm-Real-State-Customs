@@ -670,18 +670,24 @@ def enforce_crm_lead_phone_mandatory():
     mobile_no + whatsapp_number are the only contact fields.
     Client script validates that at least one is filled."""
 
-    # AGGRESSIVE CLEANUP: Remove ALL legacy Property Setters for phone/mobile_no reqd
-    # This handles old migrations that set reqd=1 and any duplicates.
+    # AGGRESSIVE CLEANUP: Remove ALL legacy Property Setters for phone/mobile_no
+    # This handles old migrations that set reqd=1, unique=1, or hidden and any duplicates.
     frappe.db.sql("""
         DELETE FROM `tabProperty Setter`
         WHERE doc_type = 'CRM Lead'
         AND field_name IN ('phone', 'mobile_no')
-        AND property IN ('reqd', 'hidden')
+        AND property IN ('reqd', 'hidden', 'unique')
     """)
     frappe.db.commit()
 
     # Ensure mobile_no is explicitly not mandatory
     make_property_setter("CRM Lead", "mobile_no", "reqd", "0", "Check")
+
+    # Remove unique index on mobile_no if it exists (Phone fieldtype cannot be unique)
+    try:
+        frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` DROP INDEX `mobile_no`")
+    except Exception:
+        pass  # Index may not exist
 
     # Also drop the phone column from the database if it still exists
     # (since the field was removed from the DocType JSON)
