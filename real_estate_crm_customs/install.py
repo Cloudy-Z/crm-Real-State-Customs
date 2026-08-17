@@ -665,48 +665,82 @@ def ensure_real_estate_lead_statuses():
 
 
 def enforce_crm_lead_phone_mandatory():
-    """Ensure mobile_no is NOT individually mandatory.
-    The 'phone' field has been removed from the DocType entirely.
-    mobile_no + whatsapp_number are the only contact fields.
-    Client script validates that at least one is filled."""
+    """Ensure phone fields are correctly configured.
 
-    # AGGRESSIVE CLEANUP: Remove ALL legacy Property Setters for phone/mobile_no
-    # This handles old migrations that set reqd=1, unique=1, hidden, or length overrides.
-    frappe.db.sql("""
-        DELETE FROM `tabProperty Setter`
+    This function is safe for both fresh installs and existing site upgrades:
+    - Fresh install: only sets reqd=0 Property Setter (cleanup steps are no-ops)
+    - Existing site: cleans up legacy Property Setters, indexes, and columns
+    """
+
+    # --- Legacy cleanup (no-ops on fresh install) ---
+    # Remove any Property Setters that conflict with Phone fieldtype defaults
+    legacy_ps_count = frappe.db.sql("""
+        SELECT COUNT(*) FROM `tabProperty Setter`
         WHERE doc_type = 'CRM Lead'
         AND field_name IN ('phone', 'mobile_no')
         AND property IN ('reqd', 'hidden', 'unique', 'length')
-    """)
-    frappe.db.commit()
+    """)[0][0]
+    if legacy_ps_count:
+        frappe.db.sql("""
+            DELETE FROM `tabProperty Setter`
+            WHERE doc_type = 'CRM Lead'
+            AND field_name IN ('phone', 'mobile_no')
+            AND property IN ('reqd', 'hidden', 'unique', 'length')
+        """)
+        frappe.db.commit()
 
-    # Ensure mobile_no is explicitly not mandatory
-    make_property_setter("CRM Lead", "mobile_no", "reqd", "0", "Check")
-
-    # Remove unique index on mobile_no if it exists (Phone fieldtype cannot be unique)
+    # Drop unique index if it exists (Phone fieldtype cannot be unique)
     try:
-        frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` DROP INDEX `mobile_no`")
-    except Exception:
-        pass  # Index may not exist
-
-    # Expand column length for phone fields to accommodate international numbers (+XX XXXXXXXXXX)
-    try:
-        frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` MODIFY `mobile_no` varchar(140) DEFAULT NULL")
+        indexes = frappe.db.sql("""
+            SELECT INDEX_NAME FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'tabCRM Lead'
+            AND COLUMN_NAME = 'mobile_no'
+            AND NON_UNIQUE = 0
+        """, as_dict=True)
+        for idx in indexes:
+            frappe.db.sql_ddl(f"ALTER TABLE `tabCRM Lead` DROP INDEX `{idx['INDEX_NAME']}`")
     except Exception:
         pass
+
+    # Ensure column is varchar(140) — Phone fieldtype default
+    # On fresh install, Frappe creates it correctly; on upgrade, it may be varchar(11)
+    try:
+        col_info = frappe.db.sql("""
+            SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+            AND TABLE_NAME = 'tabCRM Lead'
+            AND COLUMN_NAME = 'mobile_no'
+        """, as_dict=True)
+        if col_info and col_info[0].get('CHARACTER_MAXIMUM_LENGTH', 140) < 140:
+            frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` MODIFY `mobile_no` varchar(140) DEFAULT NULL")
+    except Exception:
+        pass
+
+    # Same for whatsapp_number
     try:
         if frappe.db.has_column("CRM Lead", "whatsapp_number"):
-            frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` MODIFY `whatsapp_number` varchar(140) DEFAULT NULL")
+            col_info = frappe.db.sql("""
+                SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME = 'tabCRM Lead'
+                AND COLUMN_NAME = 'whatsapp_number'
+            """, as_dict=True)
+            if col_info and col_info[0].get('CHARACTER_MAXIMUM_LENGTH', 140) < 140:
+                frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` MODIFY `whatsapp_number` varchar(140) DEFAULT NULL")
     except Exception:
         pass
 
-    # Also drop the phone column from the database if it still exists
-    # (since the field was removed from the DocType JSON)
-    try:
-        if frappe.db.has_column("CRM Lead", "phone"):
+    # Drop legacy 'phone' column if it still exists
+    if frappe.db.has_column("CRM Lead", "phone"):
+        try:
             frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` DROP COLUMN `phone`")
-    except Exception:
-        pass  # Column may already be gone
+        except Exception:
+            pass
+
+    # --- Standard setup (runs on both fresh and upgrade) ---
+    # Ensure mobile_no is explicitly not mandatory (client script handles validation)
+    make_property_setter("CRM Lead", "mobile_no", "reqd", "0", "Check")
 
     # Clear DocType cache so the schema changes take effect immediately
     frappe.clear_cache(doctype="CRM Lead")
