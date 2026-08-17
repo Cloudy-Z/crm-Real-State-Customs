@@ -29,6 +29,7 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "fieldname": "whatsapp_number",
             "label": "WhatsApp Number",
             "fieldtype": "Phone",
+            "length": 20,
             "insert_after": "mobile_no",
         },
         {
@@ -688,6 +689,17 @@ def enforce_crm_lead_phone_mandatory():
         frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` DROP INDEX `mobile_no`")
     except Exception:
         pass  # Index may not exist
+
+    # Expand column length for phone fields to accommodate international numbers (+XX XXXXXXXXXX)
+    try:
+        frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` MODIFY `mobile_no` varchar(20) DEFAULT NULL")
+    except Exception:
+        pass
+    try:
+        if frappe.db.has_column("CRM Lead", "whatsapp_number"):
+            frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` MODIFY `whatsapp_number` varchar(20) DEFAULT NULL")
+    except Exception:
+        pass
 
     # Also drop the phone column from the database if it still exists
     # (since the field was removed from the DocType JSON)

@@ -29,7 +29,8 @@
   "label": "WhatsApp Number",
   "fieldtype": "Phone",
   "insert_after": "mobile_no",
-  "name": "CRM Lead-whatsapp_number"
+  "name": "CRM Lead-whatsapp_number",
+  "length": 20
  },
  {
   "doctype": "Custom Field",
@@ -163,7 +164,7 @@
   "doctype": "Custom Field",
   "dt": "CRM Lead",
   "fieldname": "no_answer_first_call",
-  "label": "No Answer \u2013 1st Call",
+  "label": "No Answer – 1st Call",
   "fieldtype": "Check",
   "insert_after": "is_primary_buyer",
   "depends_on": "eval:doc.party_type == 'Buyer'",
@@ -174,7 +175,7 @@
   "doctype": "Custom Field",
   "dt": "CRM Lead",
   "fieldname": "no_answer_second_call",
-  "label": "No Answer \u2013 2nd Call",
+  "label": "No Answer – 2nd Call",
   "fieldtype": "Check",
   "insert_after": "no_answer_first_call",
   "depends_on": "eval:doc.party_type == 'Buyer'",
