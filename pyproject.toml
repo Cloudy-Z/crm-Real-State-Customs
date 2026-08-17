@@ -7,7 +7,7 @@ description = "Isolated Frappe custom app for real estate CRM customizations"
 requires-python = ">=3.10"
 readme = "README.md"
 dynamic = ["version"]
-dependencies = []
+dependencies = ["phonenumbers"]
 
 [build-system]
 requires = ["flit_core >=3.4,<4"]
