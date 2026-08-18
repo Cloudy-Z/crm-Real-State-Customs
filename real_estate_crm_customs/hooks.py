@@ -54,6 +54,8 @@ fixtures = [
                     "CRM Lead-last_call_at",
                     "CRM Lead-lead_age",
                     "CRM Lead-is_primary_buyer",
+                    "CRM Lead-is_interested",
+                    "CRM Lead-is_not_interested",
                     "CRM Lead-interested_in_units",
                     "CRM Lead-seller_property_section",
                     "CRM Lead-property_title",

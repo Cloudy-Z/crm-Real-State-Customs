@@ -13,11 +13,12 @@ from frappe.utils import now_datetime, get_datetime, time_diff_in_hours, add_to_
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+LEAD_STATUS_NEW = "New"
 LEAD_STATUS_FRESH = "Fresh Lead"
-LEAD_STATUS_NO_ANSWER = "No Answer"
-LEAD_STATUS_CONTACTED = "Contacted"
-LEAD_STATUS_INTERESTED = "Interested"
-LEAD_STATUS_NOT_INTERESTED = "Not Interested"
+LEAD_STATUS_REQUESTED = "Requested"
+LEAD_STATUS_OFFER_SENT = "Offer Sent"
+LEAD_STATUS_NEGOTIATING = "Negotiating"
+LEAD_STATUS_OFFER_SELECTED = "Offer Selected"
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +188,7 @@ def record_call_outcome(lead, outcome, schedule_next_call=None):
             doc.no_answer_first_call = 1
         if consecutive >= 2:
             doc.no_answer_second_call = 1
-        _set_lead_status(doc, LEAD_STATUS_NO_ANSWER)
+        # No Answer does NOT change the lead status — it only updates flags
         _add_lead_comment(doc, _("Call attempt #{0} — No Answer (total: {1})").format(consecutive, total))
         doc.save(ignore_permissions=True)
 
@@ -216,7 +217,7 @@ def record_call_outcome(lead, outcome, schedule_next_call=None):
         doc.no_answer_second_call = 0
         doc.last_call_outcome = "Answered"
         doc.last_call_at = now_datetime()
-        _set_lead_status(doc, LEAD_STATUS_CONTACTED)
+        # Answered does NOT change the lead status — it only resets no-answer flags
         _add_lead_comment(doc, _("Call answered — streak reset (total history: {0})").format(total))
         doc.save(ignore_permissions=True)
         return {
@@ -243,12 +244,16 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
     interested = int(interested or 0)
 
     if not interested:
-        _set_lead_status(doc, LEAD_STATUS_NOT_INTERESTED)
+        # Set flag, NOT status — status stays in the pipeline
+        doc.is_not_interested = 1
+        doc.is_interested = 0
         _add_lead_comment(doc, _("Lead marked as Not Interested after call."))
         doc.save(ignore_permissions=True)
-        return {"status": doc.status, "interested": False}
+        return {"status": doc.status, "interested": False, "is_not_interested": 1}
 
-    _set_lead_status(doc, LEAD_STATUS_INTERESTED)
+    # Set interest flag
+    doc.is_interested = 1
+    doc.is_not_interested = 0
     doc.is_primary_buyer = int(is_primary_buyer or 0)
 
     if interest_data:
@@ -276,10 +281,21 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
                 "request_status": "Open",
             })
 
+    # If there's a request (not in inventory), move status to Requested
+    has_request = interest_data and interest_data.get("request_notes") if isinstance(interest_data, dict) else False
+    if has_request:
+        _set_lead_status(doc, LEAD_STATUS_REQUESTED)
+
     _add_lead_comment(doc, _("Lead marked as Interested. Primary buyer: {0}").format(
         _("Yes") if doc.is_primary_buyer else _("No")))
     doc.save(ignore_permissions=True)
-    return {"status": doc.status, "interested": True, "is_primary_buyer": doc.is_primary_buyer}
+    return {
+        "status": doc.status,
+        "interested": True,
+        "is_primary_buyer": doc.is_primary_buyer,
+        "is_interested": 1,
+        "is_not_interested": 0,
+    }
 
 
 # ---------------------------------------------------------------------------

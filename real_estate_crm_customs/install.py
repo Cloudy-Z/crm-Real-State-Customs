@@ -124,10 +124,26 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "depends_on": "eval:doc.party_type == 'Buyer'",
         },
         {
+            "fieldname": "is_interested",
+            "label": "Interested",
+            "fieldtype": "Check",
+            "insert_after": "is_primary_buyer",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+            "description": "Flag: the lead has expressed interest in a property.",
+        },
+        {
+            "fieldname": "is_not_interested",
+            "label": "Not Interested",
+            "fieldtype": "Check",
+            "insert_after": "is_interested",
+            "depends_on": "eval:doc.party_type == 'Buyer'",
+            "description": "Flag: the lead has declined interest.",
+        },
+        {
             "fieldname": "no_answer_first_call",
             "label": "No Answer \u2013 1st Call",
             "fieldtype": "Check",
-            "insert_after": "is_primary_buyer",
+            "insert_after": "is_not_interested",
             "depends_on": "eval:doc.party_type == 'Buyer'",
             "read_only": 1,
         },
@@ -651,11 +667,12 @@ def ensure_real_estate_lead_statuses():
         return
 
     statuses = [
-        {"lead_status": "Fresh Lead", "type": "Ongoing", "color": "blue", "position": 10},
-        {"lead_status": "Contacted", "type": "Ongoing", "color": "blue", "position": 20},
-        {"lead_status": "No Answer", "type": "Ongoing", "color": "orange", "position": 35},
-        {"lead_status": "Interested", "type": "Ongoing", "color": "green", "position": 40},
-        {"lead_status": "Not Interested", "type": "Lost", "color": "red", "position": 90},
+        {"lead_status": "New", "type": "Open", "color": "gray", "position": 5},
+        {"lead_status": "Fresh Lead", "type": "Open", "color": "blue", "position": 10},
+        {"lead_status": "Requested", "type": "Ongoing", "color": "orange", "position": 20},
+        {"lead_status": "Offer Sent", "type": "Ongoing", "color": "blue", "position": 30},
+        {"lead_status": "Negotiating", "type": "Ongoing", "color": "yellow", "position": 40},
+        {"lead_status": "Offer Selected", "type": "Ongoing", "color": "green", "position": 50},
     ]
     for status in statuses:
         if frappe.db.exists("CRM Lead Status", status["lead_status"]):
