@@ -124,44 +124,29 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "depends_on": "eval:doc.party_type == 'Buyer'",
         },
         {
-            "fieldname": "is_interested",
-            "label": "Interested",
-            "fieldtype": "Check",
+            "fieldname": "interest_status",
+            "label": "Interest Status",
+            "fieldtype": "Select",
+            "options": "\nInterested\nNot Interested",
             "insert_after": "is_primary_buyer",
             "depends_on": "eval:doc.party_type == 'Buyer'",
             "read_only": 1,
-            "description": "System-managed flag. Only changed via workflow actions.",
+            "in_list_view": 1,
+            "description": "System-managed. Only changed via workflow actions.",
         },
         {
-            "fieldname": "is_not_interested",
-            "label": "Not Interested",
-            "fieldtype": "Check",
-            "insert_after": "is_interested",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-            "read_only": 1,
-            "description": "System-managed flag. Only changed via workflow actions.",
-        },
-        {
-            "fieldname": "no_answer_first_call",
-            "label": "No Answer \u2013 1st Call",
-            "fieldtype": "Check",
-            "insert_after": "is_not_interested",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-            "read_only": 1,
-        },
-        {
-            "fieldname": "no_answer_second_call",
-            "label": "No Answer \u2013 2nd Call",
-            "fieldtype": "Check",
-            "insert_after": "no_answer_first_call",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-            "read_only": 1,
+            "fieldname": "previous_status",
+            "label": "Previous Status",
+            "fieldtype": "Data",
+            "insert_after": "interest_status",
+            "hidden": 1,
+            "description": "Stores the previous pipeline status for rollback on offer rejection.",
         },
         {
             "fieldname": "no_answer_consecutive_count",
             "label": "Current No Answer Streak",
             "fieldtype": "Int",
-            "insert_after": "no_answer_second_call",
+            "insert_after": "previous_status",
             "depends_on": "eval:doc.party_type == 'Buyer'",
             "read_only": 1,
         },
@@ -615,7 +600,11 @@ def setup_crm_lead_custom_fields():
     _fix_fieldtype_mismatches("CRM Lead", CRM_LEAD_CUSTOM_FIELDS.get("CRM Lead", []))
 
     # Remove deprecated country code fields (replaced by Phone fieldtype's built-in picker)
-    _remove_deprecated_custom_fields("CRM Lead", ["mobile_country_code", "whatsapp_country_code"])
+    _remove_deprecated_custom_fields("CRM Lead", [
+        "mobile_country_code", "whatsapp_country_code",
+        "no_answer_first_call", "no_answer_second_call",
+        "is_interested", "is_not_interested",
+    ])
 
     create_custom_fields(CRM_LEAD_CUSTOM_FIELDS, update=True)
     frappe.clear_cache(doctype="CRM Lead")

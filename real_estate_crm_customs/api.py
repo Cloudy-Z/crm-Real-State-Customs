@@ -184,11 +184,6 @@ def record_call_outcome(lead, outcome, schedule_next_call=None):
         doc.no_answer_total_count = total
         doc.last_call_outcome = "No Answer"
         doc.last_call_at = now_datetime()
-        if consecutive == 1:
-            doc.no_answer_first_call = 1
-        if consecutive >= 2:
-            doc.no_answer_second_call = 1
-        # No Answer does NOT change the lead status — it only updates flags
         _add_lead_comment(doc, _("Call attempt #{0} — No Answer (total: {1})").format(consecutive, total))
         doc.save(ignore_permissions=True)
 
@@ -202,28 +197,21 @@ def record_call_outcome(lead, outcome, schedule_next_call=None):
             )
         return {
             "status": doc.status,
-            "no_answer_first_call": doc.no_answer_first_call,
-            "no_answer_second_call": doc.no_answer_second_call,
-            "no_answer_consecutive_count": doc.no_answer_consecutive_count,
-            "no_answer_total_count": doc.no_answer_total_count,
-            "last_call_outcome": doc.last_call_outcome,
+            "no_answer_consecutive_count": consecutive,
+            "no_answer_total_count": total,
+            "last_call_outcome": "No Answer",
             "last_call_at": str(doc.last_call_at),
             "scheduled_event": event_name,
         }
 
     elif outcome == "Answered":
         doc.no_answer_consecutive_count = 0
-        doc.no_answer_first_call = 0
-        doc.no_answer_second_call = 0
         doc.last_call_outcome = "Answered"
         doc.last_call_at = now_datetime()
-        # Answered does NOT change the lead status — it only resets no-answer flags
         _add_lead_comment(doc, _("Call answered — streak reset (total history: {0})").format(total))
         doc.save(ignore_permissions=True)
         return {
             "status": doc.status,
-            "no_answer_first_call": 0,
-            "no_answer_second_call": 0,
             "no_answer_consecutive_count": 0,
             "no_answer_total_count": doc.no_answer_total_count,
             "last_call_outcome": "Answered",
@@ -244,16 +232,14 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
     interested = int(interested or 0)
 
     if not interested:
-        # Set flag, NOT status — status stays in the pipeline
-        doc.is_not_interested = 1
-        doc.is_interested = 0
+        # Set interest_status flag, NOT pipeline status
+        doc.interest_status = "Not Interested"
         _add_lead_comment(doc, _("Lead marked as Not Interested after call."))
         doc.save(ignore_permissions=True)
-        return {"status": doc.status, "interested": False, "is_not_interested": 1}
+        return {"status": doc.status, "interested": False, "interest_status": "Not Interested"}
 
     # Set interest flag
-    doc.is_interested = 1
-    doc.is_not_interested = 0
+    doc.interest_status = "Interested"
     doc.is_primary_buyer = int(is_primary_buyer or 0)
 
     if interest_data:
@@ -281,9 +267,18 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
                 "request_status": "Open",
             })
 
-    # If there's a request (not in inventory), move status to Requested
-    has_request = interest_data and interest_data.get("request_notes") if isinstance(interest_data, dict) else False
-    if has_request:
+    # Determine status transition based on what was recorded
+    has_request = False
+    has_units = False
+    if interest_data and isinstance(interest_data, dict):
+        has_request = bool(interest_data.get("request_notes"))
+        has_units = bool(interest_data.get("units"))
+
+    # Two paths:
+    # 1. Has request (not in inventory) → Requested
+    # 2. Has inventory units → status stays (will move to Offer Sent when agent sends offer)
+    if has_request and not has_units:
+        doc.previous_status = doc.status
         _set_lead_status(doc, LEAD_STATUS_REQUESTED)
 
     _add_lead_comment(doc, _("Lead marked as Interested. Primary buyer: {0}").format(
@@ -293,8 +288,7 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
         "status": doc.status,
         "interested": True,
         "is_primary_buyer": doc.is_primary_buyer,
-        "is_interested": 1,
-        "is_not_interested": 0,
+        "interest_status": "Interested",
     }
 
 
@@ -316,8 +310,12 @@ def schedule_next_action(lead, action_type, starts_on, subject=None, notes=None,
     event_subject = subject or _("{0} — {1}").format(action_type, doc.get("lead_name") or lead)
 
     if action_type == "Send Offer":
+        # Status transition: any status → Offer Sent
+        doc.previous_status = doc.status
+        _set_lead_status(doc, LEAD_STATUS_OFFER_SENT)
         _add_lead_comment(doc, _("Next action: Send Offer scheduled for {0}. Notes: {1}").format(starts_on, notes or ""))
-        return {"action_type": action_type, "scheduled": True}
+        doc.save(ignore_permissions=True)
+        return {"action_type": action_type, "scheduled": True, "status": doc.status}
 
     event_name = _create_lead_event(lead=lead, subject=event_subject, starts_on=starts_on, meeting_type=action_type, notes=notes)
     result = {"action_type": action_type, "event": event_name, "scheduled": True}
@@ -347,6 +345,13 @@ def schedule_next_action(lead, action_type, starts_on, subject=None, notes=None,
                 notes=_("Buyer: {0}, Agent: {1}").format(doc.get("lead_name") or lead, agent),
             )
             result["seller_event"] = seller_event
+
+        # Status transition: Negotiating → Offer Selected
+        if doc.status == LEAD_STATUS_NEGOTIATING:
+            doc.previous_status = doc.status
+            _set_lead_status(doc, LEAD_STATUS_OFFER_SELECTED)
+            doc.save(ignore_permissions=True)
+            result["status"] = doc.status
 
     return result
 
@@ -574,3 +579,137 @@ def get_available_units_for_selection(lead=None):
         already_linked = {row.unit for row in lead_doc.get("interested_in_units") or [] if row.unit}
         units = [u for u in units if u.name not in already_linked]
     return units
+
+
+# ---------------------------------------------------------------------------
+# 9. Send Offer — Mark units as sent and prepare WhatsApp message
+# ---------------------------------------------------------------------------
+@frappe.whitelist()
+def send_offer_to_lead(lead, unit_rows):
+    """Mark selected interest table rows as offer_sent=1, update status to Offer Sent,
+    and return the WhatsApp URL with unit details for the agent to send."""
+    doc = _get_lead_doc(lead)
+    _validate_buyer_lead(doc)
+
+    if isinstance(unit_rows, str):
+        unit_rows = json.loads(unit_rows)
+
+    if not unit_rows:
+        frappe.throw(_("Please select at least one unit to send as offer."))
+
+    sent_count = 0
+    for row_name in unit_rows:
+        for row in doc.get("interested_in_units") or []:
+            if row.name == row_name or row.unit == row_name:
+                row.offer_sent = 1
+                row.offer_sent_at = now_datetime()
+                row.proposal_status = "Sent"
+                sent_count += 1
+
+    if sent_count == 0:
+        frappe.throw(_("No matching rows found to mark as sent."))
+
+    # Status transition → Offer Sent
+    doc.previous_status = doc.status
+    _set_lead_status(doc, LEAD_STATUS_OFFER_SENT)
+    _add_lead_comment(doc, _("Offer sent: {0} unit(s) marked as sent.").format(sent_count))
+    doc.save(ignore_permissions=True)
+
+    return {
+        "status": doc.status,
+        "sent_count": sent_count,
+        "offer_sent_total": sum(1 for r in doc.get("interested_in_units") or [] if r.get("offer_sent")),
+    }
+
+
+# ---------------------------------------------------------------------------
+# 10. Rollback Offer Rejection — Roll back to previous status
+# ---------------------------------------------------------------------------
+@frappe.whitelist()
+def rollback_offer_rejection(lead):
+    """When lead rejects all offers, roll back status to the previous pipeline stage."""
+    doc = _get_lead_doc(lead)
+    _validate_buyer_lead(doc)
+
+    previous = doc.get("previous_status")
+    if not previous:
+        # Default rollback: if no previous_status recorded, go to Fresh Lead or New
+        previous = LEAD_STATUS_FRESH if doc.get("source") else LEAD_STATUS_NEW
+
+    _set_lead_status(doc, previous)
+    doc.previous_status = ""
+    _add_lead_comment(doc, _("Offer rejected — status rolled back to: {0}").format(previous))
+    doc.save(ignore_permissions=True)
+
+    return {"status": doc.status}
+
+
+# ---------------------------------------------------------------------------
+# 11. Mark Lead as Negotiating
+# ---------------------------------------------------------------------------
+@frappe.whitelist()
+def mark_lead_negotiating(lead, unit=None):
+    """Agent marks that the lead has accepted an offer and is negotiating on a specific unit."""
+    doc = _get_lead_doc(lead)
+    _validate_buyer_lead(doc)
+
+    doc.previous_status = doc.status
+    _set_lead_status(doc, LEAD_STATUS_NEGOTIATING)
+
+    comment = _("Lead moved to Negotiating.")
+    if unit:
+        comment = _("Lead moved to Negotiating on unit: {0}").format(unit)
+    _add_lead_comment(doc, comment)
+    doc.save(ignore_permissions=True)
+
+    return {"status": doc.status}
+
+
+# ---------------------------------------------------------------------------
+# 12. Add Outsource Interest Record
+# ---------------------------------------------------------------------------
+@frappe.whitelist()
+def add_outsource_interest(lead, company_name, broker_name=None, broker_number=None, unit_details=None):
+    """Add an outsource unit to the interest table (unit from external broker/developer)."""
+    doc = _get_lead_doc(lead)
+    _validate_buyer_lead(doc)
+
+    doc.append("interested_in_units", {
+        "doctype": "Lead Interested Unit",
+        "interest_record_type": "Outsource",
+        "source_type": "Outsource",
+        "outsource_company": company_name,
+        "outsource_broker_name": broker_name,
+        "outsource_broker_number": broker_number,
+        "outsource_unit_details": unit_details,
+        "unit_interest_status": "Active",
+    })
+    _add_lead_comment(doc, _("Outsource unit added from {0}").format(company_name))
+    doc.save(ignore_permissions=True)
+
+    return {"added": True, "company": company_name}
+
+
+# ---------------------------------------------------------------------------
+# 13. Mark Unit Interest Lost
+# ---------------------------------------------------------------------------
+@frappe.whitelist()
+def mark_unit_interest_lost(lead, row_name):
+    """Mark a specific interest row as Lost Interest (without deleting it)."""
+    doc = _get_lead_doc(lead)
+    _validate_buyer_lead(doc)
+
+    found = False
+    for row in doc.get("interested_in_units") or []:
+        if row.name == row_name:
+            row.unit_interest_status = "Lost Interest"
+            found = True
+            break
+
+    if not found:
+        frappe.throw(_("Interest row not found."))
+
+    _add_lead_comment(doc, _("Lost interest marked for row: {0}").format(row_name))
+    doc.save(ignore_permissions=True)
+
+    return {"marked": True}

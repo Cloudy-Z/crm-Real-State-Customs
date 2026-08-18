@@ -7,8 +7,19 @@
  "field_order": [
   "interest_record_type",
   "unit",
+  "unit_interest_status",
+  "offer_sent",
+  "offer_sent_at",
+  "column_break_1",
+  "source_type",
+  "outsource_company",
+  "outsource_broker_name",
+  "outsource_broker_number",
+  "outsource_unit_details",
+  "section_break_request",
   "request_status",
   "request_notes",
+  "section_break_proposal",
   "proposal_status"
  ],
  "fields": [
@@ -17,16 +28,81 @@
    "fieldname": "interest_record_type",
    "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Interest Record Type",
-   "options": "Inventory Unit\nRequest"
+   "label": "Record Type",
+   "options": "Inventory Unit\nRequest\nOutsource"
   },
   {
-   "depends_on": "eval:doc.interest_record_type != 'Request'",
+   "depends_on": "eval:doc.interest_record_type == 'Inventory Unit'",
    "fieldname": "unit",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Real Estate Unit",
    "options": "Real Estate Unit"
+  },
+  {
+   "default": "Active",
+   "fieldname": "unit_interest_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Interest",
+   "options": "Active\nLost Interest"
+  },
+  {
+   "default": "0",
+   "fieldname": "offer_sent",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Offer Sent",
+   "read_only": 1,
+   "description": "Marked when this unit is sent as an offer to the lead via WhatsApp."
+  },
+  {
+   "depends_on": "eval:doc.offer_sent",
+   "fieldname": "offer_sent_at",
+   "fieldtype": "Datetime",
+   "label": "Offer Sent At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Inventory",
+   "fieldname": "source_type",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Inventory\nOutsource",
+   "depends_on": "eval:doc.interest_record_type != 'Request'"
+  },
+  {
+   "depends_on": "eval:doc.source_type == 'Outsource'",
+   "fieldname": "outsource_company",
+   "fieldtype": "Data",
+   "label": "Company Name"
+  },
+  {
+   "depends_on": "eval:doc.source_type == 'Outsource'",
+   "fieldname": "outsource_broker_name",
+   "fieldtype": "Data",
+   "label": "Broker Name"
+  },
+  {
+   "depends_on": "eval:doc.source_type == 'Outsource'",
+   "fieldname": "outsource_broker_number",
+   "fieldtype": "Phone",
+   "label": "Broker Number"
+  },
+  {
+   "depends_on": "eval:doc.source_type == 'Outsource'",
+   "fieldname": "outsource_unit_details",
+   "fieldtype": "Small Text",
+   "label": "Unit Details"
+  },
+  {
+   "fieldname": "section_break_request",
+   "fieldtype": "Section Break",
+   "depends_on": "eval:doc.interest_record_type == 'Request'"
   },
   {
    "depends_on": "eval:doc.interest_record_type == 'Request'",
@@ -40,21 +116,24 @@
    "depends_on": "eval:doc.interest_record_type == 'Request'",
    "fieldname": "request_notes",
    "fieldtype": "Small Text",
-   "in_list_view": 1,
    "label": "Request Notes"
+  },
+  {
+   "fieldname": "section_break_proposal",
+   "fieldtype": "Section Break",
+   "depends_on": "eval:doc.interest_record_type != 'Request'"
   },
   {
    "depends_on": "eval:doc.interest_record_type != 'Request'",
    "fieldname": "proposal_status",
    "fieldtype": "Select",
-   "in_list_view": 1,
    "label": "Proposal Status",
-   "options": "Sent\nViewed\nOffer Accepted\nRejected"
+   "options": "\nPending\nSent\nViewed\nOffer Accepted\nRejected"
   }
  ],
  "istable": 1,
  "links": [],
- "modified": "2026-06-20 00:00:00.000000",
+ "modified": "2026-08-18 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Real Estate CRM Customs",
  "name": "Lead Interested Unit",
