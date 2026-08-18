@@ -129,7 +129,8 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "fieldtype": "Check",
             "insert_after": "is_primary_buyer",
             "depends_on": "eval:doc.party_type == 'Buyer'",
-            "description": "Flag: the lead has expressed interest in a property.",
+            "read_only": 1,
+            "description": "System-managed flag. Only changed via workflow actions.",
         },
         {
             "fieldname": "is_not_interested",
@@ -137,7 +138,8 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "fieldtype": "Check",
             "insert_after": "is_interested",
             "depends_on": "eval:doc.party_type == 'Buyer'",
-            "description": "Flag: the lead has declined interest.",
+            "read_only": 1,
+            "description": "System-managed flag. Only changed via workflow actions.",
         },
         {
             "fieldname": "no_answer_first_call",
