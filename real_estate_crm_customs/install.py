@@ -671,6 +671,12 @@ def ensure_real_estate_lead_statuses():
         doc = frappe.get_doc({"doctype": "CRM Lead Status", **status})
         doc.insert(ignore_permissions=True)
 
+    # Remove deprecated statuses that are no longer part of the pipeline
+    deprecated_statuses = ["Contacted", "No Answer", "Interested", "Not Interested"]
+    for status_name in deprecated_statuses:
+        if frappe.db.exists("CRM Lead Status", status_name):
+            frappe.delete_doc("CRM Lead Status", status_name, ignore_permissions=True, force=True)
+
 
 def enforce_crm_lead_phone_mandatory():
     """Ensure phone fields are correctly configured.
