@@ -671,11 +671,22 @@ def ensure_real_estate_lead_statuses():
         doc = frappe.get_doc({"doctype": "CRM Lead Status", **status})
         doc.insert(ignore_permissions=True)
 
-    # Remove deprecated statuses that are no longer part of the pipeline
-    deprecated_statuses = ["Contacted", "No Answer", "Interested", "Not Interested"]
-    for status_name in deprecated_statuses:
-        if frappe.db.exists("CRM Lead Status", status_name):
-            frappe.delete_doc("CRM Lead Status", status_name, ignore_permissions=True, force=True)
+    # Remove ALL statuses not in our pipeline (including upstream CRM defaults)
+    keep_statuses = {s["lead_status"] for s in statuses}
+    all_existing = frappe.get_all("CRM Lead Status", pluck="name")
+    for status_name in all_existing:
+        if status_name not in keep_statuses:
+            # Only delete if no leads reference this status
+            leads_with_status = frappe.db.count("CRM Lead", {"status": status_name})
+            if leads_with_status == 0:
+                frappe.delete_doc("CRM Lead Status", status_name, ignore_permissions=True, force=True)
+            else:
+                # Reassign leads to "New" before deleting
+                frappe.db.sql(
+                    "UPDATE `tabCRM Lead` SET status = %s WHERE status = %s",
+                    ("New", status_name),
+                )
+                frappe.delete_doc("CRM Lead Status", status_name, ignore_permissions=True, force=True)
 
 
 def enforce_crm_lead_phone_mandatory():
