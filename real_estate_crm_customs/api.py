@@ -55,11 +55,12 @@ def _set_lead_status(doc, status):
     if not status:
         return
     color_map = {
+        LEAD_STATUS_NEW: "gray",
         LEAD_STATUS_FRESH: "blue",
-        LEAD_STATUS_NO_ANSWER: "orange",
-        LEAD_STATUS_CONTACTED: "blue",
-        LEAD_STATUS_INTERESTED: "green",
-        LEAD_STATUS_NOT_INTERESTED: "red",
+        LEAD_STATUS_REQUESTED: "orange",
+        LEAD_STATUS_OFFER_SENT: "blue",
+        LEAD_STATUS_NEGOTIATING: "yellow",
+        LEAD_STATUS_OFFER_SELECTED: "green",
     }
     _ensure_lead_status(status, color=color_map.get(status, "blue"))
     doc.status = status
@@ -250,21 +251,38 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
             if field in interest_data:
                 doc.set(field, interest_data[field])
 
+        # Add inventory units (Resale or Primary category)
+        interest_category = interest_data.get("interest_category", "Resale")
         for unit in (interest_data.get("units") or []):
             if unit and not any(r.unit == unit for r in (doc.get("interested_in_units") or []) if r.unit):
                 doc.append("interested_in_units", {
                     "doctype": "Lead Interested Unit",
                     "interest_record_type": "Inventory Unit",
+                    "interest_category": interest_category,
                     "unit": unit,
                 })
 
+        # Brokerage request (not in inventory)
         request_notes = interest_data.get("request_notes")
         if request_notes:
             doc.append("interested_in_units", {
                 "doctype": "Lead Interested Unit",
                 "interest_record_type": "Request",
+                "interest_category": "Brokerage Request",
                 "request_notes": request_notes,
                 "request_status": "Open",
+            })
+
+        # International interest
+        international_type = interest_data.get("international_type")
+        if international_type:
+            doc.append("interested_in_units", {
+                "doctype": "Lead Interested Unit",
+                "interest_record_type": "International",
+                "interest_category": "International",
+                "international_type": international_type,
+                "international_country": interest_data.get("international_country"),
+                "international_details": interest_data.get("international_details"),
             })
 
     # Determine status transition based on what was recorded
