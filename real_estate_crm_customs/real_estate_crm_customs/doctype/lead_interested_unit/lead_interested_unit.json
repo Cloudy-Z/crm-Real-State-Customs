@@ -25,7 +25,9 @@
   "request_status",
   "request_notes",
   "section_break_proposal",
-  "proposal_status"
+  "proposal_status",
+  "deletion_request_status",
+  "deletion_request"
  ],
  "fields": [
   {
@@ -168,6 +170,22 @@
    "fieldtype": "Select",
    "label": "Proposal Status",
    "options": "\nPending\nSent\nViewed\nOffer Accepted\nRejected"
+  },
+  {
+   "fieldname": "deletion_request_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Deletion Approval",
+   "options": "\nPending Manager Approval\nRejected",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.deletion_request_status",
+   "fieldname": "deletion_request",
+   "fieldtype": "Link",
+   "label": "Deletion Approval Task",
+   "options": "ToDo",
+   "read_only": 1
   }
  ],
  "istable": 1,

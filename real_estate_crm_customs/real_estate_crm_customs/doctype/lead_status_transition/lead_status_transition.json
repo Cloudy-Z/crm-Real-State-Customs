@@ -1,0 +1,102 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "autoname": "hash",
+  "creation": "2026-09-05 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "lead",
+    "from_status",
+    "to_status",
+    "action",
+    "transitioned_on",
+    "actor"
+  ],
+  "fields": [
+    {
+      "fieldname": "lead",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Lead",
+      "options": "CRM Lead",
+      "reqd": 1
+    },
+    {
+      "fieldname": "from_status",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "From Status"
+    },
+    {
+      "fieldname": "to_status",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "To Status",
+      "reqd": 1
+    },
+    {
+      "fieldname": "action",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Triggering Action",
+      "reqd": 1
+    },
+    {
+      "default": "Now",
+      "fieldname": "transitioned_on",
+      "fieldtype": "Datetime",
+      "in_list_view": 1,
+      "label": "Transitioned On",
+      "reqd": 1
+    },
+    {
+      "fieldname": "actor",
+      "fieldtype": "Link",
+      "label": "Actor",
+      "options": "User",
+      "read_only": 1
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "links": [],
+  "modified": "2026-09-05 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Real Estate CRM Customs",
+  "name": "Lead Status Transition",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 0,
+      "create": 0,
+      "delete": 0,
+      "report": 1,
+      "export": 1
+    },
+    {
+      "role": "Sales User",
+      "read": 1,
+      "write": 0,
+      "create": 0,
+      "delete": 0,
+      "report": 0,
+      "export": 0
+    }
+  ],
+  "sort_field": "transitioned_on",
+  "sort_order": "DESC",
+  "track_changes": 0
+}

@@ -573,6 +573,7 @@ def sync_real_estate_crm_defaults():
     setup_user_agent_custom_fields()
     ensure_real_estate_lead_statuses()
     enforce_crm_lead_phone_mandatory()
+    enforce_crm_lead_status_read_only()
     setup_real_estate_client_scripts()
     setup_crm_portal_defaults()
     frappe.db.commit()
@@ -771,6 +772,12 @@ def enforce_crm_lead_phone_mandatory():
     frappe.clear_cache(doctype="CRM Lead")
 
 
+def enforce_crm_lead_status_read_only():
+    """Lead status is changed only by workflow APIs, never by direct form edits."""
+    make_property_setter("CRM Lead", "status", "read_only", "1", "Check")
+    frappe.clear_cache(doctype="CRM Lead")
+
+
 def make_property_setter(doc_type, field_name, property_name, value, property_type):
     filters = {
         "doc_type": doc_type,
@@ -842,6 +849,50 @@ frappe.ui.form.on('CRM Lead', {
         // Validation below ensures at least one phone field is filled.
 
         if (!frm.is_new() && frm.doc.party_type === 'Seller') {
+            frm.add_custom_button(__('Add Property'), () => {
+                const addDialog = new frappe.ui.Dialog({
+                    title: __('Add Seller Property'),
+                    fields: [
+                        {
+                            fieldname: 'project',
+                            fieldtype: 'Link',
+                            label: __('Project'),
+                            options: 'Real Estate Project',
+                            reqd: 1,
+                        },
+                        {
+                            fieldname: 'unit_number',
+                            fieldtype: 'Data',
+                            label: __('Unit Number'),
+                            reqd: 1,
+                        },
+                        {
+                            fieldname: 'price',
+                            fieldtype: 'Currency',
+                            label: __('Asking Price'),
+                        },
+                    ],
+                    primary_action_label: __('Create Property'),
+                    primary_action(values) {
+                        frappe.call({
+                            method: 'real_estate_crm_customs.api.create_resale_unit',
+                            args: {
+                                owner_lead: frm.doc.name,
+                                project: values.project,
+                                unit_number: values.unit_number,
+                                price: values.price,
+                            },
+                            callback() {
+                                frm.reload_doc();
+                                frappe.msgprint(__('Seller property created successfully.'));
+                                addDialog.hide();
+                            },
+                        });
+                    },
+                });
+                addDialog.show();
+            }, __('Actions'));
+
             frm.add_custom_button(__('Assign Property Unit'), () => {
                 const dialog = new frappe.ui.Dialog({
                     title: __('Assign Property Unit'),

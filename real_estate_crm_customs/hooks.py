@@ -19,6 +19,9 @@ scheduler_events = {
 }
 
 doc_events = {
+    "CRM Lead": {
+        "validate": "real_estate_crm_customs.api.guard_crm_lead_workflow",
+    },
     "Real Estate Unit": {
         "before_insert": "real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit.before_insert_generate_sku",
         "validate": "real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit.validate_resale_owner",
