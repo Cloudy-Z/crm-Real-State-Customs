@@ -286,8 +286,7 @@ def record_whatsapp_subject(lead, subject):
 # ---------------------------------------------------------------------------
 @frappe.whitelist()
 def record_call_outcome(lead, outcome, schedule_next_call=None):
-    """Record call outcome. No Answer updates flags + optional next call scheduling.
-    Answered resets consecutive counter and moves status to Contacted."""
+    """Record contact result. No Answer updates history; Answered resets the streak."""
     doc = _get_lead_doc(lead)
     _validate_buyer_lead(doc)
 
@@ -342,7 +341,7 @@ def record_call_outcome(lead, outcome, schedule_next_call=None):
 # 4. Interest Determination
 # ---------------------------------------------------------------------------
 @frappe.whitelist()
-def record_interest_determination(lead, interested, is_primary_buyer=0, interest_data=None):
+def record_interest_determination(lead, interested, is_primary_buyer=0, interest_data=None, qualification_only=0):
     """Record the mandatory Interested/Not Interested outcome and its payload."""
     doc = _get_lead_doc(lead)
     _validate_buyer_lead(doc)
@@ -353,6 +352,12 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
         _add_lead_comment(doc, _("Call qualification outcome: Not Interested."))
         doc.save(ignore_permissions=True)
         return {"status": doc.status, "interested": False, "interest_status": "Not Interested"}
+
+    if int(qualification_only or 0):
+        doc.interest_status = "Interested"
+        _add_lead_comment(doc, _("Call qualification outcome: Interested."))
+        doc.save(ignore_permissions=True)
+        return {"status": doc.status, "interested": True, "interest_status": "Interested"}
 
     if isinstance(interest_data, str):
         interest_data = json.loads(interest_data)
@@ -418,7 +423,7 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
             "unit_interest_status": "Active",
         })
 
-    if category in ("Brokerage Request", "International"):
+    if category in ("Brokerage Request", "International") and doc.status in (LEAD_STATUS_NEW, LEAD_STATUS_FRESH):
         doc.previous_status = doc.status
         _set_lead_status(doc, LEAD_STATUS_REQUESTED, _("Interest recorded: {0}").format(category))
 
@@ -451,22 +456,40 @@ def schedule_next_action(lead, action_type, starts_on, subject=None, notes=None,
     event_subject = subject or _("{0} — {1}").format(action_type, doc.get("lead_name") or lead)
 
     if action_type == "Send Offer":
+        event_name = _create_lead_event(
+            lead=lead,
+            subject=event_subject,
+            starts_on=starts_on,
+            meeting_type=action_type,
+            notes=notes,
+        )
         doc.previous_status = doc.status
         _set_lead_status(doc, LEAD_STATUS_OFFER_SENT, _("Send Offer scheduled"))
         _add_lead_comment(doc, _("Next action: Send Offer scheduled for {0}. Notes: {1}").format(starts_on, notes or ""))
         _save_workflow_doc(doc)
-        return {"action_type": action_type, "scheduled": True, "status": doc.status}
+        return {
+            "action_type": action_type,
+            "event": event_name,
+            "scheduled": True,
+            "status": doc.status,
+        }
 
     event_name = _create_lead_event(lead=lead, subject=event_subject, starts_on=starts_on, meeting_type=action_type, notes=notes)
     result = {"action_type": action_type, "event": event_name, "scheduled": True}
     status_changed = False
-    if action_type in ("Meeting", "Showing") and doc.get("interest_status") == "Interested":
-        doc.previous_status = doc.status
-        status_changed = _set_lead_status(
-            doc,
-            LEAD_STATUS_OFFER_SELECTED,
-            _("{0} scheduled").format(action_type),
-        )
+    if doc.get("interest_status") == "Interested":
+        target_status = None
+        if action_type == "Meeting" and doc.status in (LEAD_STATUS_NEW, LEAD_STATUS_FRESH):
+            target_status = LEAD_STATUS_REQUESTED
+        elif action_type == "Showing" and doc.status != LEAD_STATUS_OFFER_SELECTED:
+            target_status = LEAD_STATUS_OFFER_SELECTED
+        if target_status:
+            doc.previous_status = doc.status
+            status_changed = _set_lead_status(
+                doc,
+                target_status,
+                _("{0} scheduled").format(action_type),
+            )
 
     if action_type == "Showing" and target_unit:
         if not frappe.db.exists("Real Estate Unit", target_unit):
@@ -628,32 +651,47 @@ def add_interest_request(lead, request_notes, request_status="Open"):
     doc.append("interested_in_units", {
         "doctype": "Lead Interested Unit",
         "interest_record_type": "Request",
+        "interest_category": "Brokerage Request",
         "request_notes": request_notes,
         "request_status": request_status or "Open",
+        "unit_interest_status": "Active",
     })
-    doc.save(ignore_permissions=True)
+    doc.interest_status = "Interested"
+    if doc.status in (LEAD_STATUS_NEW, LEAD_STATUS_FRESH):
+        doc.previous_status = doc.status
+        _set_lead_status(doc, LEAD_STATUS_REQUESTED, _("Brokerage request added"))
+    _save_workflow_doc(doc)
     return doc.as_dict()
 
 
 @frappe.whitelist()
-def link_interested_units(lead, units):
+def link_interested_units(lead, units, interest_category="Resale"):
     doc = _get_lead_doc(lead)
     _validate_buyer_lead(doc)
     if isinstance(units, str):
         units = json.loads(units)
-    existing_units = {row.unit for row in doc.get("interested_in_units") or [] if row.unit}
+    units = list(dict.fromkeys(filter(None, units or [])))
+    _validate_inventory_interest(interest_category, units)
+    existing_units = {
+        (row.unit, row.get("interest_category"))
+        for row in doc.get("interested_in_units") or []
+        if row.unit
+    }
     added = 0
     for unit in units:
-        if not unit or unit in existing_units:
+        if not unit or (unit, interest_category) in existing_units:
             continue
         if not frappe.db.exists("Real Estate Unit", unit):
             continue
         doc.append("interested_in_units", {
             "doctype": "Lead Interested Unit",
             "interest_record_type": "Inventory Unit",
+            "interest_category": interest_category,
             "unit": unit,
+            "unit_interest_status": "Active",
+            "proposal_status": "Pending",
         })
-        existing_units.add(unit)
+        existing_units.add((unit, interest_category))
         added += 1
     if added:
         doc.save(ignore_permissions=True)
@@ -751,7 +789,7 @@ def get_lead_linked_units(lead):
 def get_available_units_for_selection(lead=None):
     """Return available inventory units for the unit selection popup."""
     units = frappe.get_all("Real Estate Unit", filters={"status": "Available"}, fields=[
-        "name", "sku", "project", "developer", "unit_type", "floor", "finishing_type", "status", "price",
+        "name", "sku", "project", "developer", "unit_type", "floor", "finishing_type", "status", "price", "owner_lead",
     ], order_by="modified desc", limit_page_length=200)
     if lead and frappe.db.exists("CRM Lead", lead):
         lead_doc = frappe.get_doc("CRM Lead", lead)
