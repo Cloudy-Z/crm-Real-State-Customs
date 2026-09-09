@@ -97,12 +97,13 @@ def _find_interest_row(doc, row_name):
     frappe.throw(_("Interest record {0} was not found.").format(row_name), frappe.DoesNotExistError)
 
 
-def _validate_inventory_interest(category, units):
+def _validate_inventory_interest(category, units, allow_unavailable_units=None):
     if category not in ("Resale", "Primary"):
         return
     if not units:
         frappe.throw(_("At least one inventory unit is required for {0} interest.").format(category))
 
+    allowed_unavailable = set(allow_unavailable_units or [])
     for unit_name in units:
         if not frappe.db.exists("Real Estate Unit", unit_name):
             frappe.throw(_("Real Estate Unit {0} was not found.").format(unit_name))
@@ -112,7 +113,7 @@ def _validate_inventory_interest(category, units):
             ["status", "owner_lead"],
             as_dict=True,
         )
-        if unit.status != "Available":
+        if unit.status != "Available" and unit_name not in allowed_unavailable:
             frappe.throw(_("Unit {0} is not available.").format(unit_name))
         if category == "Resale" and not unit.owner_lead:
             frappe.throw(_("Resale interest must link a seller-owned resale unit."))
@@ -382,13 +383,19 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
             frappe.throw(_("Country is mandatory for International requests."))
 
     doc.interest_status = "Interested"
-    doc.is_primary_buyer = int(is_primary_buyer or category == "Primary")
-    for field in [
-        "area_unit", "preferred_unit_type", "preferred_area", "preferred_developer",
-        "preferred_compound", "preferred_finishing_type", "preferred_delivery_time", "buyer_budget",
-    ]:
-        if field in interest_data:
-            doc.set(field, interest_data[field])
+    # Inventory details remain authoritative on Real Estate Unit. Manual lead
+    # preferences are accepted only for unmatched request categories.
+    if category in ("Brokerage Request", "International"):
+        for field in (
+            "area_unit",
+            "preferred_unit_type",
+            "preferred_area",
+            "preferred_finishing_type",
+            "preferred_delivery_time",
+            "buyer_budget",
+        ):
+            if field in interest_data:
+                doc.set(field, interest_data[field])
 
     for unit in units:
         if any(r.unit == unit and r.get("interest_category") == category for r in (doc.get("interested_in_units") or []) if r.unit):
@@ -422,6 +429,12 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
             "international_details": interest_data.get("international_details"),
             "unit_interest_status": "Active",
         })
+
+    doc.is_primary_buyer = int(any(
+        row.get("interest_category") == "Primary"
+        and row.get("unit_interest_status") != "Lost Interest"
+        for row in (doc.get("interested_in_units") or [])
+    ))
 
     if category in ("Brokerage Request", "International") and doc.status in (LEAD_STATUS_NEW, LEAD_STATUS_FRESH):
         doc.previous_status = doc.status
@@ -786,15 +799,156 @@ def get_lead_linked_units(lead):
 
 
 @frappe.whitelist()
-def get_available_units_for_selection(lead=None):
-    """Return available inventory units for the unit selection popup."""
-    units = frappe.get_all("Real Estate Unit", filters={"status": "Available"}, fields=[
-        "name", "sku", "project", "developer", "unit_type", "floor", "finishing_type", "status", "price", "owner_lead",
-    ], order_by="modified desc", limit_page_length=200)
-    if lead and frappe.db.exists("CRM Lead", lead):
-        lead_doc = frappe.get_doc("CRM Lead", lead)
-        already_linked = {row.unit for row in lead_doc.get("interested_in_units") or [] if row.unit}
-        units = [u for u in units if u.name not in already_linked]
+def get_available_units_for_selection(
+    lead=None,
+    interest_category="Resale",
+    search=None,
+    project=None,
+    developer=None,
+    location=None,
+    unit_type=None,
+    min_price=None,
+    max_price=None,
+    include_unit=None,
+    page_length=100,
+):
+    """Return category-valid inventory units with price and project-location details."""
+    if interest_category not in ("Resale", "Primary"):
+        frappe.throw(_("Inventory selection is available only for Resale or Primary interests."))
+    if lead:
+        lead_doc = _get_lead_doc(lead)
+        _validate_buyer_lead(lead_doc)
+    else:
+        lead_doc = None
+
+    filters = {"status": "Available"}
+    filters["owner_lead"] = ["is", "set" if interest_category == "Resale" else "not set"]
+    if project:
+        filters["project"] = ["like", "%{0}%".format(project.strip())]
+    if developer:
+        filters["developer"] = ["like", "%{0}%".format(developer.strip())]
+    if unit_type:
+        filters["unit_type"] = unit_type
+
+    try:
+        minimum = float(min_price) if min_price not in (None, "") else None
+        maximum = float(max_price) if max_price not in (None, "") else None
+        if minimum is not None and maximum is not None and minimum > maximum:
+            frappe.throw(_("Minimum price cannot be greater than maximum price."))
+        if minimum is not None and maximum is not None:
+            filters["price"] = ["between", [minimum, maximum]]
+        elif minimum is not None:
+            filters["price"] = [">=", minimum]
+        elif maximum is not None:
+            filters["price"] = ["<=", maximum]
+    except (TypeError, ValueError):
+        frappe.throw(_("Price filters must be valid numbers."))
+
+    if location:
+        location_projects = frappe.get_all(
+            "Real Estate Project",
+            filters={"location": ["like", "%{0}%".format(location.strip())]},
+            pluck="name",
+            limit_page_length=500,
+        )
+        if not location_projects:
+            return []
+        if project:
+            location_projects = [
+                project_name
+                for project_name in location_projects
+                if project.strip().lower() in project_name.lower()
+            ]
+            if not location_projects:
+                return []
+        filters["project"] = ["in", location_projects]
+
+    or_filters = None
+    if search and search.strip():
+        pattern = "%{0}%".format(search.strip())
+        or_filters = [
+            ["Real Estate Unit", "name", "like", pattern],
+            ["Real Estate Unit", "sku", "like", pattern],
+            ["Real Estate Unit", "project", "like", pattern],
+            ["Real Estate Unit", "developer", "like", pattern],
+            ["Real Estate Unit", "unit_type", "like", pattern],
+        ]
+
+    units = frappe.get_all(
+        "Real Estate Unit",
+        filters=filters,
+        or_filters=or_filters,
+        fields=[
+            "name",
+            "sku",
+            "project",
+            "developer",
+            "unit_type",
+            "floor",
+            "finishing_type",
+            "status",
+            "price",
+            "owner_lead",
+            "modified",
+        ],
+        order_by="modified desc",
+        limit_page_length=max(10, min(_to_int(page_length) or 100, 200)),
+    )
+
+    allowed_existing = include_unit if include_unit and frappe.db.exists("Real Estate Unit", include_unit) else None
+    has_active_filters = any((search, project, developer, location, unit_type, min_price, max_price))
+    if allowed_existing and not has_active_filters and not any(unit.name == allowed_existing for unit in units):
+        existing_unit = frappe.db.get_value(
+            "Real Estate Unit",
+            allowed_existing,
+            [
+                "name",
+                "sku",
+                "project",
+                "developer",
+                "unit_type",
+                "floor",
+                "finishing_type",
+                "status",
+                "price",
+                "owner_lead",
+                "modified",
+            ],
+            as_dict=True,
+        )
+        category_matches = existing_unit and (
+            (interest_category == "Resale" and existing_unit.get("owner_lead"))
+            or (interest_category == "Primary" and not existing_unit.get("owner_lead"))
+        )
+        if category_matches:
+            units.insert(0, existing_unit)
+
+    already_linked = set()
+    if lead_doc:
+        already_linked = {
+            row.unit
+            for row in lead_doc.get("interested_in_units") or []
+            if row.unit and row.unit != allowed_existing
+        }
+    units = [unit for unit in units if unit.name not in already_linked]
+
+    project_names = list({unit.project for unit in units if unit.project})
+    project_locations = {}
+    if project_names:
+        project_rows = frappe.get_all(
+            "Real Estate Project",
+            filters={"name": ["in", project_names]},
+            fields=["name", "project_name", "location", "status"],
+            limit_page_length=500,
+        )
+        project_locations = {row.name: row for row in project_rows}
+
+    for unit in units:
+        project_row = project_locations.get(unit.project) or {}
+        unit.location = project_row.get("location")
+        unit.project_label = project_row.get("project_name") or unit.project
+        unit.project_status = project_row.get("status")
+        unit.inventory_category = "Resale" if unit.owner_lead else "Primary"
     return units
 
 
@@ -950,11 +1104,25 @@ def update_interest_record(lead, row_name, interest_data):
 
     if category in ("Resale", "Primary"):
         unit = interest_data.get("unit") or row.get("unit")
-        _validate_inventory_interest(category, [unit] if unit else [])
+        current_unit = row.get("unit")
+        _validate_inventory_interest(
+            category,
+            [unit] if unit else [],
+            allow_unavailable_units=[current_unit] if unit == current_unit else None,
+        )
+        duplicate = any(
+            other.name != row.name
+            and other.get("unit") == unit
+            and other.get("interest_category") == category
+            for other in (doc.get("interested_in_units") or [])
+        )
+        if duplicate:
+            frappe.throw(_("This unit is already recorded under the selected interest category."))
         row.interest_record_type = "Inventory Unit"
         row.interest_category = category
         row.unit = unit
         row.request_notes = None
+        row.request_status = None
         row.international_type = None
         row.international_country = None
         row.international_details = None
@@ -967,6 +1135,9 @@ def update_interest_record(lead, row_name, interest_data):
         row.unit = None
         row.request_notes = notes
         row.request_status = interest_data.get("request_status") or row.get("request_status") or "Open"
+        row.international_type = None
+        row.international_country = None
+        row.international_details = None
     elif category == "International":
         international_type = interest_data.get("international_type")
         country = interest_data.get("international_country")
@@ -975,11 +1146,22 @@ def update_interest_record(lead, row_name, interest_data):
         row.interest_record_type = "International"
         row.interest_category = category
         row.unit = None
+        row.request_notes = None
+        row.request_status = None
         row.international_type = international_type
         row.international_country = country
         row.international_details = interest_data.get("international_details")
 
     row.unit_interest_status = interest_data.get("unit_interest_status") or row.get("unit_interest_status") or "Active"
+    if category in ("Brokerage Request", "International"):
+        for field in ("preferred_area", "preferred_unit_type", "buyer_budget"):
+            if field in interest_data:
+                doc.set(field, interest_data.get(field))
+    doc.is_primary_buyer = int(any(
+        other.get("interest_category") == "Primary"
+        and other.get("unit_interest_status") != "Lost Interest"
+        for other in (doc.get("interested_in_units") or [])
+    ))
     _add_lead_comment(doc, _("Interest record updated: {0}").format(row_name))
     doc.save(ignore_permissions=True)
     return {"updated": True, "row": row.as_dict()}
