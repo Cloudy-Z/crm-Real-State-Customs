@@ -162,7 +162,7 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "fieldname": "last_call_outcome",
             "label": "Last Call Outcome",
             "fieldtype": "Select",
-            "options": "\nAnswered\nNo Answer",
+            "options": "\nAnswered\nNo Answer\nWrong Number\nInvalid / Disconnected",
             "insert_after": "no_answer_total_count",
             "depends_on": "eval:doc.party_type == 'Buyer'",
             "read_only": 1,

@@ -1,0 +1,255 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "autoname": "hash",
+  "creation": "2026-09-06 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "lead",
+    "action_type",
+    "purpose",
+    "workflow_status",
+    "is_required",
+    "section_timing",
+    "scheduled_start",
+    "started_at",
+    "completed_at",
+    "section_context",
+    "pipeline_status_at_start",
+    "qualification_at_start",
+    "event",
+    "unit",
+    "seller_lead",
+    "interest_rows",
+    "offer_origin_status",
+    "source_action",
+    "successor_action",
+    "section_result",
+    "contact_result",
+    "outcome",
+    "result_note",
+    "result_data",
+    "closed_reason",
+    "completed_by",
+    "client_request_id"
+  ],
+  "fields": [
+    {
+      "fieldname": "lead",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Lead",
+      "options": "CRM Lead",
+      "reqd": 1
+    },
+    {
+      "fieldname": "action_type",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Action Type",
+      "options": "Call\nAdd Interest\nMeeting\nShowing\nSend Offer\nNegotiation Follow-up",
+      "reqd": 1
+    },
+    {
+      "fieldname": "purpose",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Purpose",
+      "options": "\nInitial Qualification\nRequirements Discovery\nMeeting Confirmation\nShowing Confirmation\nOffer Follow-up\nNegotiation Follow-up\nGeneral Follow-up\nDiscovery Meeting\nOffer Review\nNegotiation Meeting"
+    },
+    {
+      "default": "Planned",
+      "fieldname": "workflow_status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Workflow Status",
+      "options": "Planned\nDue\nIn Progress\nCompleted\nCancelled\nRescheduled\nMissed",
+      "reqd": 1
+    },
+    {
+      "default": "0",
+      "fieldname": "is_required",
+      "fieldtype": "Check",
+      "in_list_view": 1,
+      "label": "Required Next Action"
+    },
+    {
+      "fieldname": "section_timing",
+      "fieldtype": "Section Break",
+      "label": "Timing"
+    },
+    {
+      "fieldname": "scheduled_start",
+      "fieldtype": "Datetime",
+      "in_list_view": 1,
+      "label": "Scheduled Start",
+      "reqd": 1
+    },
+    {
+      "fieldname": "started_at",
+      "fieldtype": "Datetime",
+      "label": "Started At",
+      "read_only": 1
+    },
+    {
+      "fieldname": "completed_at",
+      "fieldtype": "Datetime",
+      "label": "Completed At",
+      "read_only": 1
+    },
+    {
+      "fieldname": "section_context",
+      "fieldtype": "Section Break",
+      "label": "Context"
+    },
+    {
+      "fieldname": "pipeline_status_at_start",
+      "fieldtype": "Data",
+      "label": "Pipeline Status at Start",
+      "read_only": 1
+    },
+    {
+      "fieldname": "qualification_at_start",
+      "fieldtype": "Data",
+      "label": "Qualification at Start",
+      "read_only": 1
+    },
+    {
+      "fieldname": "event",
+      "fieldtype": "Link",
+      "label": "Calendar Event",
+      "options": "Event",
+      "read_only": 1
+    },
+    {
+      "fieldname": "unit",
+      "fieldtype": "Link",
+      "label": "Related Unit",
+      "options": "Real Estate Unit"
+    },
+    {
+      "fieldname": "seller_lead",
+      "fieldtype": "Link",
+      "label": "Related Seller Lead",
+      "options": "CRM Lead",
+      "read_only": 1
+    },
+    {
+      "fieldname": "interest_rows",
+      "fieldtype": "Long Text",
+      "label": "Interest Row Names",
+      "read_only": 1
+    },
+    {
+      "fieldname": "offer_origin_status",
+      "fieldtype": "Data",
+      "label": "Offer Origin Status",
+      "read_only": 1
+    },
+    {
+      "fieldname": "source_action",
+      "fieldtype": "Link",
+      "label": "Source Action",
+      "options": "Lead Action Execution",
+      "read_only": 1
+    },
+    {
+      "fieldname": "successor_action",
+      "fieldtype": "Link",
+      "label": "Successor Action",
+      "options": "Lead Action Execution",
+      "read_only": 1
+    },
+    {
+      "fieldname": "section_result",
+      "fieldtype": "Section Break",
+      "label": "Result"
+    },
+    {
+      "fieldname": "contact_result",
+      "fieldtype": "Select",
+      "label": "Contact Result",
+      "options": "\nAnswered\nNo Answer\nWrong Number\nInvalid / Disconnected",
+      "read_only": 1
+    },
+    {
+      "fieldname": "outcome",
+      "fieldtype": "Data",
+      "label": "Outcome",
+      "read_only": 1
+    },
+    {
+      "fieldname": "result_note",
+      "fieldtype": "Small Text",
+      "label": "Result Note",
+      "read_only": 1
+    },
+    {
+      "fieldname": "result_data",
+      "fieldtype": "Long Text",
+      "label": "Structured Result Data",
+      "read_only": 1
+    },
+    {
+      "fieldname": "closed_reason",
+      "fieldtype": "Small Text",
+      "label": "Closed Reason",
+      "read_only": 1
+    },
+    {
+      "fieldname": "completed_by",
+      "fieldtype": "Link",
+      "label": "Completed By",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "client_request_id",
+      "fieldtype": "Data",
+      "label": "Client Request ID",
+      "read_only": 1,
+      "unique": 1
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "links": [],
+  "modified": "2026-09-06 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Real Estate CRM Customs",
+  "name": "Lead Action Execution",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "write": 0,
+      "create": 0,
+      "delete": 0,
+      "report": 1,
+      "export": 1
+    },
+    {
+      "role": "Sales User",
+      "read": 1,
+      "write": 0,
+      "create": 0,
+      "delete": 0,
+      "report": 0,
+      "export": 0
+    }
+  ],
+  "sort_field": "scheduled_start",
+  "sort_order": "ASC",
+  "track_changes": 0
+}
