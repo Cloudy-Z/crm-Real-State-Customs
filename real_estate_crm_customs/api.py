@@ -5,6 +5,8 @@ Gated workflow: Fresh Lead → Call/WhatsApp → Call Log → Interest → Next 
 """
 import json
 import urllib.parse
+from difflib import SequenceMatcher
+
 import frappe
 from frappe import _
 from frappe.utils import now_datetime, get_datetime, time_diff_in_hours, add_to_date
@@ -892,7 +894,7 @@ def get_available_units_for_selection(
             "modified",
         ],
         order_by="modified desc",
-        limit_page_length=max(10, min(_to_int(page_length) or 100, 200)),
+        limit_page_length=max(10, min(_to_int(page_length) or 100, 500)),
     )
 
     allowed_existing = include_unit if include_unit and frappe.db.exists("Real Estate Unit", include_unit) else None
@@ -950,6 +952,275 @@ def get_available_units_for_selection(
         unit.project_status = project_row.get("status")
         unit.inventory_category = "Resale" if unit.owner_lead else "Primary"
     return units
+
+
+def _normalize_match_text(value):
+    return " ".join(str(value or "").strip().lower().replace("-", " ").split())
+
+
+def _text_match_ratio(expected, actual):
+    expected_text = _normalize_match_text(expected)
+    actual_text = _normalize_match_text(actual)
+    if not expected_text:
+        return None
+    if not actual_text:
+        return 0.0
+    if expected_text == actual_text:
+        return 1.0
+    if expected_text in actual_text or actual_text in expected_text:
+        return 0.85
+    expected_tokens = set(expected_text.split())
+    actual_tokens = set(actual_text.split())
+    union = expected_tokens | actual_tokens
+    token_ratio = len(expected_tokens & actual_tokens) / len(union) if union else 0
+    sequence_ratio = SequenceMatcher(None, expected_text, actual_text).ratio()
+    return max(token_ratio, sequence_ratio * 0.8)
+
+
+def _lead_property_match_profile(lead_doc, interest_category=None):
+    """Build soft criteria from lead preferences and same-category active inventory history."""
+    profile = frappe._dict({
+        "location": lead_doc.get("preferred_area"),
+        "unit_type": lead_doc.get("preferred_unit_type"),
+        "developer": lead_doc.get("preferred_developer"),
+        "project": lead_doc.get("preferred_compound"),
+        "finishing_type": lead_doc.get("preferred_finishing_type"),
+        "budget_min": None,
+        "budget": lead_doc.get("buyer_budget"),
+        "source": "Lead Preferences",
+    })
+
+    reference_unit = None
+    for row in reversed(lead_doc.get("interested_in_units") or []):
+        category_matches = not interest_category or row.get("interest_category") == interest_category
+        if row.get("unit") and row.get("unit_interest_status") != "Lost Interest" and category_matches:
+            reference_unit = frappe.db.get_value(
+                "Real Estate Unit",
+                row.unit,
+                ["name", "project", "developer", "unit_type", "finishing_type", "price"],
+                as_dict=True,
+            )
+            if reference_unit:
+                break
+
+    if reference_unit:
+        project_details = (
+            frappe.db.get_value(
+                "Real Estate Project",
+                reference_unit.get("project"),
+                ["location"],
+                as_dict=True,
+            )
+            if reference_unit.get("project")
+            else None
+        ) or {}
+        fallback_values = {
+            "location": project_details.get("location"),
+            "unit_type": reference_unit.get("unit_type"),
+            "developer": reference_unit.get("developer"),
+            "project": reference_unit.get("project"),
+            "finishing_type": reference_unit.get("finishing_type"),
+            "budget": reference_unit.get("price"),
+        }
+        used_fallback = False
+        for fieldname, value in fallback_values.items():
+            if not profile.get(fieldname) and value not in (None, ""):
+                profile[fieldname] = value
+                used_fallback = True
+        if used_fallback:
+            profile.source = "Lead Preferences + Latest Active Interest"
+            profile.reference_unit = reference_unit.get("name")
+
+    profile.criteria_count = sum(
+        1
+        for fieldname in (
+            "location",
+            "unit_type",
+            "developer",
+            "project",
+            "finishing_type",
+            "budget_min",
+            "budget",
+        )
+        if profile.get(fieldname) not in (None, "")
+    )
+    return profile
+
+
+def _apply_match_profile_overrides(
+    profile,
+    project=None,
+    developer=None,
+    location=None,
+    unit_type=None,
+    min_price=None,
+    max_price=None,
+):
+    overrides = {
+        "project": project,
+        "developer": developer,
+        "location": location,
+        "unit_type": unit_type,
+        "budget_min": min_price,
+        "budget": max_price,
+    }
+    changed = False
+    for fieldname, value in overrides.items():
+        if value not in (None, ""):
+            profile[fieldname] = value
+            changed = True
+    if changed:
+        profile.source = "Adjusted Smart Match"
+    profile.criteria_count = sum(
+        1
+        for fieldname in (
+            "location",
+            "unit_type",
+            "developer",
+            "project",
+            "finishing_type",
+            "budget_min",
+            "budget",
+        )
+        if profile.get(fieldname) not in (None, "")
+    )
+    return profile
+
+
+def _score_property_match(unit, profile):
+    weighted_score = 0.0
+    total_weight = 0.0
+    reasons = []
+    gaps = []
+    comparisons = (
+        ("Location", profile.get("location"), unit.get("location"), 30),
+        ("Unit type", profile.get("unit_type"), unit.get("unit_type"), 22),
+        ("Project", profile.get("project"), unit.get("project"), 16),
+        ("Developer", profile.get("developer"), unit.get("developer"), 12),
+        ("Finishing", profile.get("finishing_type"), unit.get("finishing_type"), 10),
+    )
+    for label, expected, actual, weight in comparisons:
+        ratio = _text_match_ratio(expected, actual)
+        if ratio is None:
+            continue
+        total_weight += weight
+        weighted_score += ratio * weight
+        if ratio >= 0.8:
+            reasons.append(_("{0} matches").format(label))
+        elif ratio >= 0.4:
+            reasons.append(_("{0} is similar").format(label))
+        else:
+            gaps.append(_("{0} differs").format(label))
+
+    minimum_budget = profile.get("budget_min")
+    maximum_budget = profile.get("budget")
+    if minimum_budget not in (None, "") or maximum_budget not in (None, ""):
+        total_weight += 30
+        try:
+            minimum_value = float(minimum_budget) if minimum_budget not in (None, "") else None
+            maximum_value = float(maximum_budget) if maximum_budget not in (None, "") else None
+            price_value = float(unit.get("price"))
+        except (TypeError, ValueError):
+            minimum_value = None
+            maximum_value = None
+            price_value = 0
+        if price_value <= 0:
+            budget_score = 0.0
+            gaps.append(_("Price comparison unavailable"))
+        elif minimum_value is not None and price_value < minimum_value:
+            budget_score = max(0.4, price_value / minimum_value) if minimum_value > 0 else 1.0
+            gaps.append(_("Below preferred price range"))
+        elif maximum_value is None or price_value <= maximum_value:
+            budget_score = 1.0
+            reasons.append(_("Within preferred price range"))
+        elif price_value <= maximum_value * 1.1:
+            budget_score = 0.75
+            reasons.append(_("Up to 10% above budget"))
+        elif price_value <= maximum_value * 1.2:
+            budget_score = 0.45
+            gaps.append(_("Up to 20% above budget"))
+        else:
+            budget_score = 0.0
+            gaps.append(_("More than 20% above budget"))
+        weighted_score += budget_score * 30
+
+    score = round((weighted_score / total_weight) * 100) if total_weight else None
+    if score is None:
+        level = "Unscored"
+    elif score >= 85:
+        level = "Excellent"
+    elif score >= 65:
+        level = "Good"
+    elif score >= 40:
+        level = "Possible"
+    else:
+        level = "Alternative"
+    return score, level, reasons[:4], gaps[:3]
+
+
+@frappe.whitelist()
+def get_smart_matched_units(
+    lead,
+    interest_category="Resale",
+    search=None,
+    project=None,
+    developer=None,
+    location=None,
+    unit_type=None,
+    min_price=None,
+    max_price=None,
+    include_unit=None,
+    page_length=100,
+    strict_filters=0,
+):
+    """Return eligible units ranked by soft proximity to the lead's property profile."""
+    lead_doc = _get_lead_doc(lead)
+    _validate_buyer_lead(lead_doc)
+    strict_filters = _to_int(strict_filters)
+    units = get_available_units_for_selection(
+        lead=lead,
+        interest_category=interest_category,
+        search=search,
+        project=project if strict_filters else None,
+        developer=developer if strict_filters else None,
+        location=location if strict_filters else None,
+        unit_type=unit_type if strict_filters else None,
+        min_price=min_price if strict_filters else None,
+        max_price=max_price if strict_filters else None,
+        include_unit=include_unit,
+        page_length=500,
+    )
+    profile = _apply_match_profile_overrides(
+        _lead_property_match_profile(lead_doc, interest_category),
+        project=project,
+        developer=developer,
+        location=location,
+        unit_type=unit_type,
+        min_price=min_price,
+        max_price=max_price,
+    )
+    for unit in units:
+        score, level, reasons, gaps = _score_property_match(unit, profile)
+        unit.match_score = score
+        unit.match_level = level
+        unit.match_reasons = reasons
+        unit.match_gaps = gaps
+
+    units.sort(
+        key=lambda unit: (
+            unit.get("match_score") is not None,
+            unit.get("match_score") or 0,
+            unit.get("modified") or "",
+        ),
+        reverse=True,
+    )
+    result_limit = max(10, min(_to_int(page_length) or 100, 200))
+    return {
+        "units": units[:result_limit],
+        "profile": profile,
+        "smart_match_active": bool(profile.get("criteria_count")),
+        "match_mode": "Exact Filters" if strict_filters else "Smart Match",
+    }
 
 
 # ---------------------------------------------------------------------------
