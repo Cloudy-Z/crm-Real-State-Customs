@@ -3,6 +3,7 @@ Real Estate CRM Customs — Buyer Lead Action Web API (v2.1)
 ==========================================================
 Gated workflow: Fresh Lead → Call/WhatsApp → Call Log → Interest → Next Action → Meeting/Showing → Result → Loop
 """
+import html
 import json
 import urllib.parse
 from difflib import SequenceMatcher
@@ -385,19 +386,20 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
             frappe.throw(_("Country is mandatory for International requests."))
 
     doc.interest_status = "Interested"
-    # Inventory details remain authoritative on Real Estate Unit. Manual lead
-    # preferences are accepted only for unmatched request categories.
-    if category in ("Brokerage Request", "International"):
-        for field in (
-            "area_unit",
-            "preferred_unit_type",
-            "preferred_area",
-            "preferred_finishing_type",
-            "preferred_delivery_time",
-            "buyer_budget",
-        ):
-            if field in interest_data:
-                doc.set(field, interest_data[field])
+    # These fields describe the buyer's requirements. Facts about each selected
+    # property remain authoritative on Real Estate Unit and are not copied here.
+    for field in (
+        "area_unit",
+        "preferred_unit_type",
+        "preferred_area",
+        "preferred_developer",
+        "preferred_compound",
+        "preferred_finishing_type",
+        "preferred_delivery_time",
+        "buyer_budget",
+    ):
+        if field in interest_data:
+            doc.set(field, interest_data[field])
 
     for unit in units:
         if any(r.unit == unit and r.get("interest_category") == category for r in (doc.get("interested_in_units") or []) if r.unit):
@@ -809,6 +811,7 @@ def get_available_units_for_selection(
     developer=None,
     location=None,
     unit_type=None,
+    finishing_type=None,
     min_price=None,
     max_price=None,
     include_unit=None,
@@ -831,6 +834,8 @@ def get_available_units_for_selection(
         filters["developer"] = ["like", "%{0}%".format(developer.strip())]
     if unit_type:
         filters["unit_type"] = unit_type
+    if finishing_type:
+        filters["finishing_type"] = finishing_type
 
     try:
         minimum = float(min_price) if min_price not in (None, "") else None
@@ -898,7 +903,9 @@ def get_available_units_for_selection(
     )
 
     allowed_existing = include_unit if include_unit and frappe.db.exists("Real Estate Unit", include_unit) else None
-    has_active_filters = any((search, project, developer, location, unit_type, min_price, max_price))
+    has_active_filters = any(
+        (search, project, developer, location, unit_type, finishing_type, min_price, max_price)
+    )
     if allowed_existing and not has_active_filters and not any(unit.name == allowed_existing for unit in units):
         existing_unit = frappe.db.get_value(
             "Real Estate Unit",
@@ -952,6 +959,46 @@ def get_available_units_for_selection(
         unit.project_status = project_row.get("status")
         unit.inventory_category = "Resale" if unit.owner_lead else "Primary"
     return units
+
+
+@frappe.whitelist()
+def get_property_match_filter_options(interest_category="Resale"):
+    """Return inventory-backed options for non-Link Smart Match filters."""
+    if interest_category not in ("Resale", "Primary"):
+        frappe.throw(_("Inventory filters are available only for Resale or Primary interests."))
+    ownership_filter = ["is", "set" if interest_category == "Resale" else "not set"]
+    unit_filters = {"status": "Available", "owner_lead": ownership_filter}
+    project_names = frappe.get_all(
+        "Real Estate Unit",
+        filters=unit_filters,
+        pluck="project",
+        limit_page_length=500,
+    )
+    locations = []
+    if project_names:
+        locations = frappe.get_all(
+            "Real Estate Project",
+            filters={"name": ["in", list(filter(None, project_names))]},
+            pluck="location",
+            limit_page_length=500,
+        )
+    unit_types = frappe.get_all(
+        "Real Estate Unit",
+        filters=unit_filters,
+        pluck="unit_type",
+        limit_page_length=500,
+    )
+    finishing_types = frappe.get_all(
+        "Real Estate Unit",
+        filters=unit_filters,
+        pluck="finishing_type",
+        limit_page_length=500,
+    )
+    return {
+        "locations": sorted(set(filter(None, locations))),
+        "unit_types": sorted(set(filter(None, unit_types))),
+        "finishing_types": sorted(set(filter(None, finishing_types))),
+    }
 
 
 def _normalize_match_text(value):
@@ -1167,6 +1214,7 @@ def get_smart_matched_units(
     developer=None,
     location=None,
     unit_type=None,
+    finishing_type=None,
     min_price=None,
     max_price=None,
     include_unit=None,
@@ -1185,6 +1233,7 @@ def get_smart_matched_units(
         developer=developer if strict_filters else None,
         location=location if strict_filters else None,
         unit_type=unit_type if strict_filters else None,
+        finishing_type=finishing_type if strict_filters else None,
         min_price=min_price if strict_filters else None,
         max_price=max_price if strict_filters else None,
         include_unit=include_unit,
@@ -1199,6 +1248,22 @@ def get_smart_matched_units(
         min_price=min_price,
         max_price=max_price,
     )
+    if finishing_type not in (None, ""):
+        profile.finishing_type = finishing_type
+        profile.source = "Adjusted Smart Match"
+        profile.criteria_count = sum(
+            1
+            for fieldname in (
+                "location",
+                "unit_type",
+                "developer",
+                "project",
+                "finishing_type",
+                "budget_min",
+                "budget",
+            )
+            if profile.get(fieldname) not in (None, "")
+        )
     for unit in units:
         score, level, reasons, gaps = _score_property_match(unit, profile)
         unit.match_score = score
@@ -1424,10 +1489,17 @@ def update_interest_record(lead, row_name, interest_data):
         row.international_details = interest_data.get("international_details")
 
     row.unit_interest_status = interest_data.get("unit_interest_status") or row.get("unit_interest_status") or "Active"
-    if category in ("Brokerage Request", "International"):
-        for field in ("preferred_area", "preferred_unit_type", "buyer_budget"):
-            if field in interest_data:
-                doc.set(field, interest_data.get(field))
+    for field in (
+        "preferred_area",
+        "preferred_unit_type",
+        "preferred_developer",
+        "preferred_compound",
+        "preferred_finishing_type",
+        "preferred_delivery_time",
+        "buyer_budget",
+    ):
+        if field in interest_data:
+            doc.set(field, interest_data.get(field))
     doc.is_primary_buyer = int(any(
         other.get("interest_category") == "Primary"
         and other.get("unit_interest_status") != "Lost Interest"
@@ -1736,7 +1808,7 @@ def _allowed_action_definitions(lead_doc):
         return [{
             "action_type": "Call",
             "purpose": "Initial Qualification",
-            "label": _("Start initial qualification call"),
+            "label": _("Call and qualify the lead"),
             "requires_interest_rows": False,
             "requires_unit": False,
         }]
@@ -1761,14 +1833,14 @@ def _allowed_action_definitions(lead_doc):
         {
             "action_type": "Call",
             "purpose": "General Follow-up",
-            "label": _("Schedule follow-up call"),
+            "label": _("Follow up by call"),
             "requires_interest_rows": False,
             "requires_unit": False,
         },
         {
             "action_type": "Meeting",
             "purpose": "Discovery Meeting",
-            "label": _("Schedule discovery meeting"),
+            "label": _("Hold or schedule a discovery meeting"),
             "requires_interest_rows": False,
             "requires_unit": False,
         },
@@ -1777,7 +1849,7 @@ def _allowed_action_definitions(lead_doc):
         options.append({
             "action_type": "Send Offer",
             "purpose": "Offer Follow-up",
-            "label": _("Send offer for selected interest units"),
+            "label": _("Send selected unit offers by WhatsApp"),
             "requires_interest_rows": True,
             "requires_unit": False,
             "interest_row_names": [row.name for row in unsent_inventory_rows],
@@ -1786,7 +1858,7 @@ def _allowed_action_definitions(lead_doc):
         options.append({
             "action_type": "Call",
             "purpose": "Offer Follow-up",
-            "label": _("Schedule offer follow-up"),
+            "label": _("Follow up on sent offers"),
             "requires_interest_rows": True,
             "requires_unit": False,
             "interest_row_names": [row.name for row in sent_rows],
@@ -1803,7 +1875,7 @@ def _allowed_action_definitions(lead_doc):
         options.append({
             "action_type": "Showing",
             "purpose": "Showing Confirmation",
-            "label": _("Schedule showing for negotiating unit"),
+            "label": _("Hold or schedule a unit showing"),
             "requires_interest_rows": True,
             "requires_unit": True,
             "interest_row_names": [row.name for row in negotiating_rows],
@@ -1990,7 +2062,7 @@ def _create_action_execution(
     _require_action_doctype()
     _validate_action_type(action_type, purpose)
     if not scheduled_start:
-        frappe.throw(_("Scheduled date and time are required."))
+        scheduled_start = now_datetime()
 
     if is_required and not allow_existing_required_action and _get_required_action(lead_doc.name):
         frappe.throw(_("This lead already has a required action. Complete, reschedule, or cancel it before creating another."))
@@ -2088,9 +2160,9 @@ def get_lead_action_context(lead):
         if action.workflow_status in ACTION_TERMINAL_STATUSES:
             action = None
         elif action.workflow_status == "In Progress":
-            primary_command = _("Complete {0}").format(action.action_type)
+            primary_command = _("Record {0} result").format(action.action_type)
         else:
-            primary_command = _("Start {0}").format(action.action_type)
+            primary_command = _("Do {0} now").format(action.action_type)
     else:
         primary_command = _("Choose next action")
 
@@ -2346,6 +2418,122 @@ def _validate_call_result(action, contact_result, outcome):
         frappe.throw(_("An answered follow-up call requires a valid outcome."))
 
 
+def _format_offer_price(value):
+    if value in (None, ""):
+        return _("Price on request")
+    try:
+        return "{:,.0f}".format(float(value))
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _prepare_offer_whatsapp_dispatch(lead_doc, row_names, dispatch_note):
+    """Build one offer message from authoritative unit data and record the dispatch."""
+    phone = _lead_contact_number(lead_doc)
+    if not phone:
+        frappe.throw(_("Lead has no WhatsApp or mobile number for offer dispatch."))
+    if not (dispatch_note or "").strip():
+        frappe.throw(_("WhatsApp offer message is mandatory."))
+
+    selected_names = _parse_json_list(row_names)
+    rows_by_name = {
+        row.name: row
+        for row in (lead_doc.get("interested_in_units") or [])
+        if row.name in selected_names and row.get("unit")
+    }
+    if len(rows_by_name) != len(selected_names):
+        frappe.throw(_("Every offer interest record must link a valid inventory unit."))
+
+    unit_names = [rows_by_name[name].unit for name in selected_names]
+    unit_rows = frappe.get_all(
+        "Real Estate Unit",
+        filters={"name": ["in", unit_names]},
+        fields=[
+            "name",
+            "sku",
+            "project",
+            "developer",
+            "unit_type",
+            "floor",
+            "finishing_type",
+            "price",
+            "status",
+        ],
+        limit_page_length=max(len(unit_names), 1),
+    )
+    units_by_name = {unit.name: unit for unit in unit_rows}
+    project_names = list({unit.project for unit in unit_rows if unit.project})
+    projects_by_name = {}
+    if project_names:
+        projects_by_name = {
+            project.name: project
+            for project in frappe.get_all(
+                "Real Estate Project",
+                filters={"name": ["in", project_names]},
+                fields=["name", "project_name", "location"],
+                limit_page_length=len(project_names),
+            )
+        }
+
+    message_lines = [(dispatch_note or "").strip(), "", _("Selected properties:")]
+    offer_units = []
+    for index, row_name in enumerate(selected_names, start=1):
+        interest_row = rows_by_name[row_name]
+        unit = units_by_name.get(interest_row.unit)
+        if not unit:
+            frappe.throw(_("Offer unit {0} was not found.").format(interest_row.unit))
+        project = projects_by_name.get(unit.project) or {}
+        project_label = project.get("project_name") or unit.project or _("Unspecified project")
+        location = project.get("location") or _("Location not specified")
+        facts = [unit.get("unit_type"), unit.get("finishing_type")]
+        if unit.get("floor") not in (None, ""):
+            facts.append(_("Floor {0}").format(unit.floor))
+        message_lines.extend([
+            "{0}. {1} — {2}".format(index, project_label, location),
+            " | ".join(filter(None, facts)),
+            _("Price: {0}").format(_format_offer_price(unit.get("price"))),
+            _("Reference: {0}").format(unit.get("sku") or unit.name),
+            "",
+        ])
+        offer_units.append({
+            "interest_row": row_name,
+            "unit": unit.name,
+            "reference": unit.get("sku") or unit.name,
+            "project": project_label,
+            "location": location,
+            "price": unit.get("price"),
+        })
+
+    message = "\n".join(message_lines).strip()
+    communication = frappe.get_doc({
+        "doctype": "Communication",
+        "communication_type": "Communication",
+        "communication_medium": "Other",
+        "subject": _("WhatsApp Property Offer — {0} unit(s)").format(len(offer_units)),
+        "content": html.escape(message).replace("\n", "<br>"),
+        "reference_doctype": "CRM Lead",
+        "reference_name": lead_doc.name,
+        "sender": frappe.session.user,
+        "sent_or_received": "Sent",
+    })
+    communication.insert(ignore_permissions=True)
+
+    clean_phone = "".join(character for character in str(phone) if character.isdigit())
+    if not clean_phone:
+        frappe.throw(_("Lead WhatsApp or mobile number is invalid."))
+    whatsapp_url = "https://wa.me/{0}?text={1}".format(
+        clean_phone,
+        urllib.parse.quote(message),
+    )
+    return {
+        "channel": "WhatsApp",
+        "communication": communication.name,
+        "whatsapp_url": whatsapp_url,
+        "message": message,
+        "units": offer_units,
+    }
+
+
 def _apply_action_result_facts(lead_doc, action, payload):
     """Apply scoped domain facts. No global qualification change occurs on later actions."""
     outcome = payload.get("outcome")
@@ -2354,6 +2542,7 @@ def _apply_action_result_facts(lead_doc, action, payload):
     next_action = payload.get("next_action")
     next_action = next_action or None
     status_changed = False
+    action_output = {}
 
     if action.action_type == "Call":
         if contact_result not in ("Answered", "No Answer", "Wrong Number", "Invalid / Disconnected"):
@@ -2426,6 +2615,20 @@ def _apply_action_result_facts(lead_doc, action, payload):
         if outcome != "Dispatched":
             frappe.throw(_("An offer action can be completed only after successful dispatch."))
         row_names = _result_interest_rows(lead_doc, action, payload, required=True)
+        _validate_action_interest_scope(
+            lead_doc,
+            action.action_type,
+            action.purpose,
+            row_names,
+            action.get("unit"),
+        )
+        action_output["dispatch"] = _prepare_offer_whatsapp_dispatch(
+            lead_doc,
+            row_names,
+            result_note,
+        )
+        payload["dispatch_channel"] = "WhatsApp"
+        payload["communication"] = action_output["dispatch"]["communication"]
         _update_unit_outcomes(lead_doc, row_names, "Sent")
         for row in lead_doc.get("interested_in_units") or []:
             if row.name in set(_parse_json_list(row_names)):
@@ -2455,7 +2658,7 @@ def _apply_action_result_facts(lead_doc, action, payload):
 
     if not status_changed:
         status_changed = _apply_pipeline_from_facts(lead_doc, _("Workflow facts updated: {0}").format(action.action_type))
-    return next_action, status_changed
+    return next_action, status_changed, action_output
 
 
 def _sync_unit_showing_result(lead_doc, action, outcome, result_note=None):
@@ -2503,15 +2706,22 @@ def complete_lead_action(lead, action_name, result_data, client_request_id=None,
         frappe.throw(_("Only the current required action can be completed."), frappe.PermissionError)
     if expected_modified and str(action.modified) != str(expected_modified):
         frappe.throw(_("This action was changed by another user. Reload the lead before submitting."), frappe.ValidationError)
-    if action.workflow_status != "In Progress":
-        frappe.throw(_("Start the current action before submitting its result."), frappe.ValidationError)
+    if action.workflow_status in ("Planned", "Due"):
+        action.workflow_status = "In Progress"
+        action.started_at = action.get("started_at") or now_datetime()
+    elif action.workflow_status != "In Progress":
+        frappe.throw(_("This action cannot accept a result in its current state."), frappe.ValidationError)
     if not _ensure_action_not_completed(action, client_request_id):
         return {"action": _serialize_action(action), "context": get_lead_action_context(lead), "idempotent": True}
 
     if isinstance(result_data, str):
         result_data = json.loads(result_data)
     result_data = result_data or {}
-    next_action, status_changed = _apply_action_result_facts(lead_doc, action, result_data)
+    next_action, status_changed, action_output = _apply_action_result_facts(
+        lead_doc,
+        action,
+        result_data,
+    )
     _validate_next_action_payload(lead_doc, action, result_data)
 
     outcome = result_data.get("outcome")
@@ -2594,6 +2804,7 @@ def complete_lead_action(lead, action_name, result_data, client_request_id=None,
         "successor_action": _serialize_action(successor),
         "status": lead_doc.status,
         "status_changed": status_changed,
+        "dispatch": action_output.get("dispatch"),
         "context": get_lead_action_context(lead),
     }
 
