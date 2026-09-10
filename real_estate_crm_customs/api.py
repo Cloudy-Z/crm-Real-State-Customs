@@ -225,6 +225,7 @@ def _create_lead_event(lead, subject, starts_on, event_type="Private", meeting_t
         "starts_on": starts,
         "ends_on": ends,
         "event_type": event_type,
+        "status": "Open",
         "description": notes or "",
     })
     event.append("event_participants", {
@@ -2129,6 +2130,31 @@ def _create_action_execution(
     return action
 
 
+def _ensure_future_action_event(action, lead_doc):
+    """Repair a missing Event only for a genuinely future, still-planned action."""
+    if not action or action.action_type == "Add Interest":
+        return action
+    if action.workflow_status != "Planned" or not action.get("scheduled_start"):
+        return action
+    if get_datetime(action.scheduled_start) <= now_datetime():
+        return action
+    if action.get("event") and frappe.db.exists("Event", action.event):
+        return action
+
+    action.event = _create_lead_event(
+        lead_doc.name,
+        _("{0}: {1}").format(
+            action.action_type,
+            action.purpose or lead_doc.get("lead_name") or lead_doc.name,
+        ),
+        action.scheduled_start,
+        meeting_type=action.action_type,
+        notes=_("Workflow action {0}").format(action.name),
+    )
+    action.save(ignore_permissions=True)
+    return action
+
+
 @frappe.whitelist()
 def get_lead_action_context(lead):
     """Return the context-aware Action Web policy for the current lead."""
@@ -2153,6 +2179,7 @@ def get_lead_action_context(lead):
     action = _get_required_action(lead)
     if action:
         action = _transition_action_to_due(action)
+        action = _ensure_future_action_event(action, lead_doc)
 
     blockers = []
     warnings = []
@@ -2207,6 +2234,7 @@ def plan_lead_action(
     unit=None,
     interest_rows=None,
     expected_required_action=None,
+    execute_now=0,
 ):
     """Create the next required action from the policy-approved choices only."""
     lead_doc = _get_lead_doc(lead)
@@ -2238,6 +2266,13 @@ def plan_lead_action(
         frappe.throw(_("One or more selected interest records do not belong to this lead."), frappe.PermissionError)
     _validate_action_interest_scope(lead_doc, action_type, purpose or requested["purpose"], selected_rows, unit)
 
+    execute_now = bool(_to_int(execute_now))
+    if execute_now:
+        scheduled_start = now_datetime()
+    if not execute_now and (
+        not scheduled_start or get_datetime(scheduled_start) <= now_datetime()
+    ):
+        frappe.throw(_("Schedule for Later requires a future date and time."))
     action = _create_action_execution(
         lead_doc=lead_doc,
         action_type=action_type,
@@ -2251,10 +2286,18 @@ def plan_lead_action(
             action_type,
             purpose or requested["purpose"],
         ),
-        create_event=action_type != "Add Interest",
+        create_event=action_type != "Add Interest" and not execute_now,
     )
+    if not execute_now and action_type != "Add Interest":
+        if not action.get("event") or not frappe.db.exists("Event", action.event):
+            frappe.throw(_("The scheduled workflow action could not create its calendar Event."))
     _apply_planning_milestone(lead_doc, action_type)
-    return {"action": _serialize_action(action), "context": get_lead_action_context(lead)}
+    return {
+        "action": _serialize_action(action),
+        "event": action.get("event"),
+        "execution_mode": "Immediate" if execute_now else "Scheduled",
+        "context": get_lead_action_context(lead),
+    }
 
 
 @frappe.whitelist()
@@ -2793,7 +2836,10 @@ def complete_lead_action(lead, action_name, result_data, client_request_id=None,
                 action,
             ),
             allow_existing_required_action=True,
-            create_event=next_type != "Add Interest",
+            create_event=(
+                next_type != "Add Interest"
+                and not bool(_to_int(next_action.get("execute_now")))
+            ),
         )
         _apply_planning_milestone(lead_doc, next_type)
         action.successor_action = successor.name
@@ -2855,7 +2901,10 @@ def cancel_lead_action(lead, action_name, reason, next_action=None):
                 action,
             ),
             allow_existing_required_action=True,
-            create_event=next_action.get("action_type") != "Add Interest",
+            create_event=(
+                next_action.get("action_type") != "Add Interest"
+                and not bool(_to_int(next_action.get("execute_now")))
+            ),
         )
         _apply_planning_milestone(lead_doc, next_action.get("action_type"))
         action.successor_action = successor.name
