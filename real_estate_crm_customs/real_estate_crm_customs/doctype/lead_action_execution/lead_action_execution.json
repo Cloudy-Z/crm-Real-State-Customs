@@ -49,7 +49,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Action Type",
-      "options": "Call\nAdd Interest\nMeeting\nShowing\nSend Offer\nNegotiation Follow-up",
+      "options": "Call\nAdd Interest\nMeeting\nShowing\nSend Offer\nOffer Decision\nNegotiation Follow-up",
       "reqd": 1
     },
     {
@@ -57,7 +57,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Purpose",
-      "options": "\nInitial Qualification\nRequirements Discovery\nMeeting Confirmation\nShowing Confirmation\nOffer Follow-up\nNegotiation Follow-up\nGeneral Follow-up\nDiscovery Meeting\nOffer Review\nNegotiation Meeting"
+      "options": "\nInitial Qualification\nRequirements Discovery\nMeeting Confirmation\nShowing Confirmation\nOffer Follow-up\nOffer Decision\nNegotiation Follow-up\nGeneral Follow-up\nGeneral Meeting\nExplore Meeting\nMeeting with Owner\nDiscovery Meeting\nOffer Review\nNegotiation Meeting"
     },
     {
       "default": "Planned",

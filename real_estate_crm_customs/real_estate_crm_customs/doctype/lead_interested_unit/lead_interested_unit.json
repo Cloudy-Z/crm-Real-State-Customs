@@ -24,6 +24,13 @@
   "section_break_request",
   "request_status",
   "request_notes",
+  "requested_area",
+  "requested_unit_type",
+  "requested_budget",
+  "requested_project",
+  "requested_developer",
+  "requested_finishing_type",
+  "requested_delivery_time",
   "section_break_proposal",
   "proposal_status",
   "deletion_request_status",
@@ -158,6 +165,50 @@
    "fieldname": "request_notes",
    "fieldtype": "Small Text",
    "label": "Request Notes"
+  },
+  {
+   "depends_on": "eval:doc.interest_record_type == 'Request'",
+   "fieldname": "requested_area",
+   "fieldtype": "Data",
+   "label": "Requested Location / Area"
+  },
+  {
+   "depends_on": "eval:doc.interest_record_type == 'Request'",
+   "fieldname": "requested_unit_type",
+   "fieldtype": "Data",
+   "label": "Requested Unit Type"
+  },
+  {
+   "depends_on": "eval:doc.interest_record_type == 'Request'",
+   "fieldname": "requested_budget",
+   "fieldtype": "Currency",
+   "label": "Requested Maximum Budget"
+  },
+  {
+   "depends_on": "eval:doc.interest_record_type == 'Request'",
+   "fieldname": "requested_project",
+   "fieldtype": "Link",
+   "label": "Requested Project",
+   "options": "Real Estate Project"
+  },
+  {
+   "depends_on": "eval:doc.interest_record_type == 'Request'",
+   "fieldname": "requested_developer",
+   "fieldtype": "Link",
+   "label": "Requested Developer",
+   "options": "Property Developer"
+  },
+  {
+   "depends_on": "eval:doc.interest_record_type == 'Request'",
+   "fieldname": "requested_finishing_type",
+   "fieldtype": "Data",
+   "label": "Requested Finishing"
+  },
+  {
+   "depends_on": "eval:doc.interest_record_type == 'Request'",
+   "fieldname": "requested_delivery_time",
+   "fieldtype": "Data",
+   "label": "Requested Delivery Time"
   },
   {
    "fieldname": "section_break_proposal",

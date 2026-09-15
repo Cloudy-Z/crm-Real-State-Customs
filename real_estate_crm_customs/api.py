@@ -345,6 +345,128 @@ def record_call_outcome(lead, outcome, schedule_next_call=None):
 # ---------------------------------------------------------------------------
 # 4. Interest Determination
 # ---------------------------------------------------------------------------
+def _apply_interest_payload(
+    doc,
+    interest_data,
+    require_inventory_requirements=False,
+    apply_status=True,
+):
+    """Apply one interest draft to a Lead without saving, so callers can commit atomically."""
+    if isinstance(interest_data, str):
+        interest_data = json.loads(interest_data)
+    interest_data = interest_data or {}
+    category = interest_data.get("interest_category")
+    allowed_categories = ("Resale", "Primary", "Brokerage Request", "International")
+    if category not in allowed_categories:
+        frappe.throw(_("Please select a valid interest category."))
+
+    raw_units = interest_data.get("units") or []
+    if isinstance(raw_units, str):
+        raw_units = [raw_units]
+    units = list(dict.fromkeys(filter(None, raw_units)))
+    requested_unit = bool(_to_int(interest_data.get("requested_unit")))
+
+    if category in ("Resale", "Primary"):
+        if requested_unit and units:
+            frappe.throw(_("Choose matched inventory units or Requested Unit, not both."))
+        if not requested_unit:
+            _validate_inventory_interest(category, units)
+        if require_inventory_requirements:
+            missing = [
+                label
+                for fieldname, label in (
+                    ("preferred_area", _("Preferred Location / Area")),
+                    ("preferred_unit_type", _("Preferred Unit Type")),
+                    ("buyer_budget", _("Maximum Budget")),
+                )
+                if not interest_data.get(fieldname)
+            ]
+            if missing:
+                frappe.throw(_("Complete the interest requirements: {0}.").format(", ".join(missing)))
+    if category == "Brokerage Request" and not interest_data.get("request_notes"):
+        frappe.throw(_("Brokerage requirements are mandatory."))
+    if category == "International":
+        if not interest_data.get("international_type"):
+            frappe.throw(_("International category is mandatory."))
+        if not interest_data.get("international_country"):
+            frappe.throw(_("Country is mandatory for International requests."))
+
+    doc.interest_status = "Interested"
+    for field in (
+        "area_unit",
+        "preferred_unit_type",
+        "preferred_area",
+        "preferred_developer",
+        "preferred_compound",
+        "preferred_finishing_type",
+        "preferred_delivery_time",
+        "buyer_budget",
+    ):
+        if field in interest_data:
+            doc.set(field, interest_data[field])
+
+    added_rows = []
+    for unit in units:
+        if any(
+            row.unit == unit and row.get("interest_category") == category
+            for row in (doc.get("interested_in_units") or [])
+            if row.unit
+        ):
+            continue
+        added_rows.append(doc.append("interested_in_units", {
+            "doctype": "Lead Interested Unit",
+            "interest_record_type": "Inventory Unit",
+            "interest_category": category,
+            "unit": unit,
+            "unit_interest_status": "Active",
+            "proposal_status": "Pending",
+        }))
+
+    if requested_unit or category == "Brokerage Request":
+        request_note = interest_data.get("request_notes") or _(
+            "Requested {0} unit — no suitable inventory match."
+        ).format(category)
+        added_rows.append(doc.append("interested_in_units", {
+            "doctype": "Lead Interested Unit",
+            "interest_record_type": "Request",
+            "interest_category": category,
+            "request_notes": request_note,
+            "request_status": "Open",
+            "unit_interest_status": "Active",
+            "requested_area": interest_data.get("preferred_area"),
+            "requested_unit_type": interest_data.get("preferred_unit_type"),
+            "requested_budget": interest_data.get("buyer_budget"),
+            "requested_project": interest_data.get("preferred_compound"),
+            "requested_developer": interest_data.get("preferred_developer"),
+            "requested_finishing_type": interest_data.get("preferred_finishing_type"),
+            "requested_delivery_time": interest_data.get("preferred_delivery_time"),
+        }))
+
+    if category == "International":
+        added_rows.append(doc.append("interested_in_units", {
+            "doctype": "Lead Interested Unit",
+            "interest_record_type": "International",
+            "interest_category": category,
+            "international_type": interest_data.get("international_type"),
+            "international_country": interest_data.get("international_country"),
+            "international_details": interest_data.get("international_details"),
+            "unit_interest_status": "Active",
+        }))
+
+    doc.is_primary_buyer = int(any(
+        row.get("interest_category") == "Primary"
+        and row.get("unit_interest_status") != "Lost Interest"
+        for row in (doc.get("interested_in_units") or [])
+    ))
+
+    creates_request = requested_unit or category in ("Brokerage Request", "International")
+    if apply_status and creates_request and doc.status in (LEAD_STATUS_NEW, LEAD_STATUS_FRESH, LEAD_STATUS_OFFER_SENT):
+        doc.previous_status = doc.status
+        _set_lead_status(doc, LEAD_STATUS_REQUESTED, _("Interest request recorded: {0}").format(category))
+
+    return {"category": category, "requested_unit": requested_unit, "rows": added_rows}
+
+
 @frappe.whitelist()
 def record_interest_determination(lead, interested, is_primary_buyer=0, interest_data=None, qualification_only=0):
     """Record the mandatory Interested/Not Interested outcome and its payload."""
@@ -364,95 +486,17 @@ def record_interest_determination(lead, interested, is_primary_buyer=0, interest
         doc.save(ignore_permissions=True)
         return {"status": doc.status, "interested": True, "interest_status": "Interested"}
 
-    if isinstance(interest_data, str):
-        interest_data = json.loads(interest_data)
-    interest_data = interest_data or {}
-    category = interest_data.get("interest_category")
-    allowed_categories = ("Resale", "Primary", "Brokerage Request", "International")
-    if category not in allowed_categories:
-        frappe.throw(_("Please select a valid interest category."))
-
-    raw_units = interest_data.get("units") or []
-    if isinstance(raw_units, str):
-        raw_units = [raw_units]
-    units = list(dict.fromkeys(filter(None, raw_units)))
-    _validate_inventory_interest(category, units)
-
-    if category == "Brokerage Request" and not interest_data.get("request_notes"):
-        frappe.throw(_("Brokerage requirements are mandatory."))
-    if category == "International":
-        if not interest_data.get("international_type"):
-            frappe.throw(_("International category is mandatory."))
-        if not interest_data.get("international_country"):
-            frappe.throw(_("Country is mandatory for International requests."))
-
-    doc.interest_status = "Interested"
-    # These fields describe the buyer's requirements. Facts about each selected
-    # property remain authoritative on Real Estate Unit and are not copied here.
-    for field in (
-        "area_unit",
-        "preferred_unit_type",
-        "preferred_area",
-        "preferred_developer",
-        "preferred_compound",
-        "preferred_finishing_type",
-        "preferred_delivery_time",
-        "buyer_budget",
-    ):
-        if field in interest_data:
-            doc.set(field, interest_data[field])
-
-    for unit in units:
-        if any(r.unit == unit and r.get("interest_category") == category for r in (doc.get("interested_in_units") or []) if r.unit):
-            continue
-        doc.append("interested_in_units", {
-            "doctype": "Lead Interested Unit",
-            "interest_record_type": "Inventory Unit",
-            "interest_category": category,
-            "unit": unit,
-            "unit_interest_status": "Active",
-            "proposal_status": "Pending",
-        })
-
-    if category == "Brokerage Request":
-        doc.append("interested_in_units", {
-            "doctype": "Lead Interested Unit",
-            "interest_record_type": "Request",
-            "interest_category": category,
-            "request_notes": interest_data.get("request_notes"),
-            "request_status": "Open",
-            "unit_interest_status": "Active",
-        })
-
-    if category == "International":
-        doc.append("interested_in_units", {
-            "doctype": "Lead Interested Unit",
-            "interest_record_type": "International",
-            "interest_category": category,
-            "international_type": interest_data.get("international_type"),
-            "international_country": interest_data.get("international_country"),
-            "international_details": interest_data.get("international_details"),
-            "unit_interest_status": "Active",
-        })
-
-    doc.is_primary_buyer = int(any(
-        row.get("interest_category") == "Primary"
-        and row.get("unit_interest_status") != "Lost Interest"
-        for row in (doc.get("interested_in_units") or [])
-    ))
-
-    if category in ("Brokerage Request", "International") and doc.status in (LEAD_STATUS_NEW, LEAD_STATUS_FRESH):
-        doc.previous_status = doc.status
-        _set_lead_status(doc, LEAD_STATUS_REQUESTED, _("Interest recorded: {0}").format(category))
-
-    _add_lead_comment(doc, _("Call qualification outcome: Interested — {0}.").format(category))
+    applied = _apply_interest_payload(doc, interest_data)
+    _add_lead_comment(doc, _("Call qualification outcome: Interested — {0}.").format(applied["category"]))
     _save_workflow_doc(doc)
     return {
         "status": doc.status,
         "interested": True,
         "is_primary_buyer": doc.is_primary_buyer,
         "interest_status": "Interested",
-        "interest_category": category,
+        "interest_category": applied["category"],
+        "requested_unit": applied["requested_unit"],
+        "interest_rows": [row.name for row in applied["rows"] if row.name],
     }
 
 
@@ -785,6 +829,13 @@ def get_lead_linked_units(lead):
             "interest_category": category,
             "request_status": interest_row.get("request_status") or "Open",
             "request_notes": interest_row.get("request_notes"),
+            "requested_area": interest_row.get("requested_area"),
+            "requested_unit_type": interest_row.get("requested_unit_type"),
+            "requested_budget": interest_row.get("requested_budget"),
+            "requested_project": interest_row.get("requested_project"),
+            "requested_developer": interest_row.get("requested_developer"),
+            "requested_finishing_type": interest_row.get("requested_finishing_type"),
+            "requested_delivery_time": interest_row.get("requested_delivery_time"),
             "international_type": interest_row.get("international_type"),
             "international_country": interest_row.get("international_country"),
             "international_details": interest_row.get("international_details"),
@@ -1672,7 +1723,7 @@ def get_lead_progress(lead):
 # ---------------------------------------------------------------------------
 ACTION_OPEN_STATUSES = ("Planned", "Due", "In Progress")
 ACTION_TERMINAL_STATUSES = ("Completed", "Cancelled", "Rescheduled", "Missed")
-ACTION_TYPES = ("Call", "Add Interest", "Meeting", "Showing", "Send Offer", "Negotiation Follow-up")
+ACTION_TYPES = ("Call", "Add Interest", "Meeting", "Showing", "Send Offer", "Offer Decision", "Negotiation Follow-up")
 ACTION_PURPOSES = (
     "Initial Qualification",
     "Requirements Discovery",
@@ -1681,8 +1732,12 @@ ACTION_PURPOSES = (
     "Offer Follow-up",
     "Negotiation Follow-up",
     "General Follow-up",
+    "General Meeting",
+    "Explore Meeting",
+    "Meeting with Owner",
     "Discovery Meeting",
     "Offer Review",
+    "Offer Decision",
     "Negotiation Meeting",
 )
 
@@ -1724,6 +1779,17 @@ def _validate_action_type(action_type, purpose=None):
         frappe.throw(_("Invalid action purpose: {0}").format(purpose))
     if action_type == "Showing" and purpose and purpose not in ("Showing Confirmation", "General Follow-up"):
         frappe.throw(_("Showing actions must use Showing Confirmation or General Follow-up purpose."))
+    if action_type == "Meeting" and purpose and purpose not in (
+        "General Meeting",
+        "Explore Meeting",
+        "Meeting with Owner",
+        "Discovery Meeting",
+        "Offer Review",
+        "Negotiation Meeting",
+    ):
+        frappe.throw(_("Invalid meeting purpose."))
+    if action_type == "Offer Decision" and purpose and purpose != "Offer Decision":
+        frappe.throw(_("Offer Decision actions must use the Offer Decision purpose."))
     if action_type == "Negotiation Follow-up" and purpose and purpose != "Negotiation Follow-up":
         frappe.throw(_("Negotiation actions must use Negotiation Follow-up purpose."))
 
@@ -1789,7 +1855,14 @@ def _action_schema(action, lead_doc):
             return "call.negotiation_follow_up.v1"
         return "call.follow_up.v1"
     if action.action_type == "Meeting":
-        return "meeting.result.v1"
+        meeting_schema = {
+            "General Meeting": "meeting.general.v2",
+            "Explore Meeting": "meeting.explore.v2",
+            "Meeting with Owner": "meeting.owner.v2",
+        }
+        return meeting_schema.get(action.purpose, "meeting.result.v1")
+    if action.action_type == "Offer Decision":
+        return "offer.decision.v1"
     if action.action_type == "Showing":
         return "showing.result.v1"
     if action.action_type == "Send Offer":
@@ -1823,6 +1896,16 @@ def _allowed_action_definitions(lead_doc):
         if row.get("offer_sent") and row.get("proposal_status") != "Rejected"
     ]
     negotiating_rows = [row for row in sent_rows if row.get("proposal_status") == "Offer Accepted"]
+    if lead_doc.get("status") == LEAD_STATUS_OFFER_SENT and sent_rows:
+        return [{
+            "action_type": "Offer Decision",
+            "purpose": "Offer Decision",
+            "label": _("Select an offer or change requirements"),
+            "requires_interest_rows": True,
+            "requires_unit": False,
+            "interest_row_names": [row.name for row in sent_rows],
+        }]
+
     options = [
         {
             "action_type": "Add Interest",
@@ -1840,12 +1923,33 @@ def _allowed_action_definitions(lead_doc):
         },
         {
             "action_type": "Meeting",
-            "purpose": "Discovery Meeting",
-            "label": _("Hold or schedule a discovery meeting"),
+            "purpose": "General Meeting",
+            "label": _("General meeting"),
+            "requires_interest_rows": False,
+            "requires_unit": False,
+        },
+        {
+            "action_type": "Meeting",
+            "purpose": "Explore Meeting",
+            "label": _("Explore requirements meeting"),
             "requires_interest_rows": False,
             "requires_unit": False,
         },
     ]
+    resale_rows = [
+        row for row in inventory_rows
+        if row.get("interest_category") == "Resale"
+        and frappe.db.get_value("Real Estate Unit", row.get("unit"), "owner_lead")
+    ]
+    if resale_rows:
+        options.append({
+            "action_type": "Meeting",
+            "purpose": "Meeting with Owner",
+            "label": _("Meet the Resale unit owner"),
+            "requires_interest_rows": True,
+            "requires_unit": True,
+            "interest_row_names": [row.name for row in resale_rows],
+        })
     if unsent_inventory_rows:
         options.append({
             "action_type": "Send Offer",
@@ -1897,7 +2001,7 @@ def _current_workflow_snapshot(lead_doc):
         "sent_offer_count": len(sent_rows),
         "negotiating_interest_count": len(accepted_rows),
         "has_unmatched_request": any(
-            row.get("interest_category") in ("Brokerage Request", "International")
+            row.get("interest_record_type") in ("Request", "International")
             and row.get("unit_interest_status") != "Lost Interest"
             and row.get("request_status") not in ("Fulfilled", "Cancelled")
             for row in rows
@@ -1937,6 +2041,19 @@ def _validate_action_interest_scope(lead_doc, action_type, purpose, row_names, u
     if action_type == "Call" and purpose == "Offer Follow-up":
         if any(not row.get("unit") or not row.get("offer_sent") or row.get("proposal_status") == "Rejected" for row in rows):
             frappe.throw(_("Offer follow-up must use live sent inventory offers."))
+    if action_type == "Offer Decision":
+        if any(not row.get("unit") or not row.get("offer_sent") or row.get("proposal_status") == "Rejected" for row in rows):
+            frappe.throw(_("Offer decisions must use live sent inventory offers."))
+    if action_type == "Meeting" and purpose == "Meeting with Owner":
+        if len(rows) != 1:
+            frappe.throw(_("Meeting with Owner requires exactly one Resale interest record."))
+        row = rows[0]
+        if row.get("interest_category") != "Resale" or not row.get("unit") or row.get("unit_interest_status") == "Lost Interest":
+            frappe.throw(_("Meeting with Owner is available only for one active Resale unit."))
+        if not frappe.db.get_value("Real Estate Unit", row.get("unit"), "owner_lead"):
+            frappe.throw(_("The selected Resale unit has no linked owner Lead."))
+        if unit and unit != row.get("unit"):
+            frappe.throw(_("Owner Meeting unit must match the selected Resale interest."))
     if action_type in ("Negotiation Follow-up", "Showing"):
         if any(not row.get("unit") or row.get("proposal_status") != "Offer Accepted" for row in rows):
             frappe.throw(_("Negotiation and showing actions require selected accepted offer units."))
@@ -2006,7 +2123,11 @@ def _latest_offer_origin_status(lead_doc):
 def _action_offer_origin(lead_doc, action_type, purpose, source_action=None):
     if source_action and source_action.get("offer_origin_status"):
         return source_action.get("offer_origin_status")
-    if purpose in ("Offer Follow-up", "Negotiation Follow-up") or action_type in ("Showing", "Negotiation Follow-up"):
+    if purpose in ("Offer Follow-up", "Offer Decision", "Negotiation Follow-up") or action_type in (
+        "Offer Decision",
+        "Showing",
+        "Negotiation Follow-up",
+    ):
         return _latest_offer_origin_status(lead_doc)
     return lead_doc.get("status")
 
@@ -2073,6 +2194,8 @@ def _create_action_execution(
         frappe.throw(_("Real Estate Unit {0} was not found.").format(unit))
     if action_type == "Showing" and not unit:
         frappe.throw(_("A Showing action requires one related unit."))
+    if action_type == "Meeting" and purpose == "Meeting with Owner" and not unit:
+        frappe.throw(_("Meeting with Owner requires one related Resale unit."))
 
     seller_lead = None
     if unit:
@@ -2106,6 +2229,18 @@ def _create_action_execution(
         "source_action": source_action,
     })
     action.insert(ignore_permissions=True)
+
+    if create_event and action_type == "Meeting" and purpose == "Meeting with Owner" and unit and seller_lead:
+        _create_lead_event(
+            seller_lead,
+            _("Owner meeting scheduled for unit {0}").format(unit),
+            scheduled_start,
+            meeting_type="Meeting with Owner",
+            notes=_("Buyer: {0}; Action: {1}").format(
+                lead_doc.get("lead_name") or lead_doc.name,
+                action.name,
+            ),
+        )
 
     if action_type == "Showing" and unit:
         unit_doc = frappe.get_doc("Real Estate Unit", unit)
@@ -2402,7 +2537,10 @@ def _validate_next_action_payload(lead_doc, action, result_data):
     if action_type == "Showing" and not next_action.get("unit"):
         frappe.throw(_("A next Showing action requires one related unit."))
     selected_rows = _parse_json_list(next_action.get("interest_rows"))
-    if action_type in ("Send Offer", "Negotiation Follow-up", "Showing") and not selected_rows:
+    requires_rows = action_type in ("Send Offer", "Offer Decision", "Negotiation Follow-up", "Showing") or (
+        action_type == "Meeting" and purpose == "Meeting with Owner"
+    )
+    if requires_rows and not selected_rows:
         frappe.throw(_("Select one or more interest rows for the next action."))
     valid_rows = {row.name for row in lead_doc.get("interested_in_units") or [] if row.name}
     if not set(selected_rows) <= valid_rows:
@@ -2475,8 +2613,7 @@ def _prepare_offer_whatsapp_dispatch(lead_doc, row_names, dispatch_note):
     phone = _lead_contact_number(lead_doc)
     if not phone:
         frappe.throw(_("Lead has no WhatsApp or mobile number for offer dispatch."))
-    if not (dispatch_note or "").strip():
-        frappe.throw(_("WhatsApp offer message is mandatory."))
+    dispatch_note = (dispatch_note or _("Here are the property options selected for you.")).strip()
 
     selected_names = _parse_json_list(row_names)
     rows_by_name = {
@@ -2518,7 +2655,7 @@ def _prepare_offer_whatsapp_dispatch(lead_doc, row_names, dispatch_note):
             )
         }
 
-    message_lines = [(dispatch_note or "").strip(), "", _("Selected properties:")]
+    message_lines = [dispatch_note, "", _("Selected properties:")]
     offer_units = []
     for index, row_name in enumerate(selected_names, start=1):
         interest_row = rows_by_name[row_name]
@@ -2587,6 +2724,9 @@ def _apply_action_result_facts(lead_doc, action, payload):
     status_changed = False
     action_output = {}
 
+    if outcome == "Cancelled":
+        return next_action, status_changed, action_output
+
     if action.action_type == "Call":
         if contact_result not in ("Answered", "No Answer", "Wrong Number", "Invalid / Disconnected"):
             frappe.throw(_("Select a valid contact result."))
@@ -2605,8 +2745,6 @@ def _apply_action_result_facts(lead_doc, action, payload):
             if qualification not in ("Interested", "Not Interested"):
                 frappe.throw(_("Initial answered call requires Interested or Not Interested qualification."))
             lead_doc.interest_status = qualification
-            if qualification == "Not Interested" and not payload.get("closed_reason"):
-                frappe.throw(_("A reason is mandatory when marking a lead Not Interested."))
         elif payload.get("qualification"):
             frappe.throw(_("Lead qualification can only be changed by an initial or explicit requalification action."), frappe.PermissionError)
 
@@ -2626,10 +2764,6 @@ def _apply_action_result_facts(lead_doc, action, payload):
     elif action.action_type == "Meeting":
         if outcome not in ("Done", "No Show", "Cancelled", "Rescheduled"):
             frappe.throw(_("Meeting outcome must be Done, No Show, Cancelled, or Rescheduled."))
-        if outcome == "Done" and not result_note:
-            frappe.throw(_("Meeting result note is mandatory when the meeting is Done."))
-        if outcome in ("No Show", "Cancelled") and not payload.get("closed_reason"):
-            frappe.throw(_("A reason is mandatory when a meeting is missed or cancelled."))
 
     elif action.action_type == "Showing":
         if not action.get("unit"):
@@ -2651,8 +2785,36 @@ def _apply_action_result_facts(lead_doc, action, payload):
             elif unit_outcome == "Interested":
                 _update_unit_outcomes(lead_doc, row_names, "Offer Accepted")
                 status_changed = _set_lead_status(lead_doc, LEAD_STATUS_OFFER_SELECTED, _("Showing completed for selected unit")) or status_changed
-        elif outcome in ("Buyer No Show", "Seller/Unit Unavailable", "Cancelled") and not payload.get("closed_reason"):
-            frappe.throw(_("A reason is mandatory for this showing outcome."))
+
+    elif action.action_type == "Offer Decision":
+        decision = payload.get("decision") or outcome
+        scoped_rows = _action_interest_rows(action)
+        selected = _result_interest_rows(lead_doc, action, payload, required=True)
+        if decision == "Select an Offer":
+            if len(selected) != 1:
+                frappe.throw(_("Select exactly one accepted offer."))
+            _update_unit_outcomes(lead_doc, selected, "Offer Accepted")
+            other_rows = [row_name for row_name in scoped_rows if row_name not in set(selected)]
+            if other_rows:
+                _update_unit_outcomes(lead_doc, other_rows, "Rejected")
+            payload["outcome"] = "Offer Selected"
+            status_changed = _set_lead_status(
+                lead_doc,
+                LEAD_STATUS_NEGOTIATING,
+                _("Lead selected an offered unit"),
+            ) or status_changed
+        elif decision == "Change Requirements":
+            if set(selected) != set(scoped_rows):
+                frappe.throw(_("Changing requirements must supersede all current live offers."))
+            _update_unit_outcomes(lead_doc, selected, "Rejected")
+            payload["outcome"] = "Requirements Changed"
+            status_changed = _reconcile_stage_after_unit_rejection(
+                lead_doc,
+                action,
+                _("Lead changed requirements after offers"),
+            ) or status_changed
+        else:
+            frappe.throw(_("Choose Select an Offer or Change Requirements."))
 
     elif action.action_type == "Send Offer":
         if outcome != "Dispatched":
@@ -2816,7 +2978,11 @@ def complete_lead_action(lead, action_name, result_data, client_request_id=None,
     if next_action and outcome != "Rescheduled":
         next_type = next_action.get("action_type")
         next_purpose = next_action.get("purpose")
-        next_starts = next_action.get("scheduled_start")
+        next_starts = (
+            now_datetime()
+            if bool(_to_int(next_action.get("execute_now")))
+            else next_action.get("scheduled_start")
+        )
         if not next_type or not next_starts:
             frappe.throw(_("A next action requires type and scheduled date/time."))
         successor = _create_action_execution(
@@ -2929,3 +3095,205 @@ def requalify_lead(lead, qualification, reason):
     _add_lead_comment(lead_doc, _("Lead requalified by {0}: {1}. Reason: {2}").format(frappe.session.user, qualification, reason))
     _save_workflow_doc(lead_doc)
     return {"qualification": qualification, "context": get_lead_action_context(lead)}
+
+
+# ---------------------------------------------------------------------------
+# 17. Unified single-submit action bundle
+# ---------------------------------------------------------------------------
+def _parse_json_object(value, label):
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            frappe.throw(_("{0} must be valid JSON.").format(label))
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        frappe.throw(_("{0} must be an object.").format(label))
+    return value
+
+
+def _hydrate_bundle_action_scope(lead_doc, action_data):
+    """Resolve unit IDs submitted by the draft UI to authoritative child-row names."""
+    if not action_data:
+        return action_data
+    action_data = dict(action_data)
+    selected_units = set(_parse_json_list(action_data.pop("units", None)))
+    if selected_units and not _parse_json_list(action_data.get("interest_rows")):
+        action_data["interest_rows"] = [
+            row.name
+            for row in (lead_doc.get("interested_in_units") or [])
+            if row.name
+            and row.get("unit") in selected_units
+            and row.get("unit_interest_status") != "Lost Interest"
+        ]
+    if (
+        action_data.get("action_type") in ("Showing", "Meeting")
+        and action_data.get("purpose") in ("Showing Confirmation", "Meeting with Owner")
+        and not action_data.get("unit")
+    ):
+        row_names = set(_parse_json_list(action_data.get("interest_rows")))
+        scoped_units = [
+            row.get("unit")
+            for row in (lead_doc.get("interested_in_units") or [])
+            if row.name in row_names and row.get("unit")
+        ]
+        if len(scoped_units) == 1:
+            action_data["unit"] = scoped_units[0]
+    return action_data
+
+
+def _bundle_idempotent_result(lead, client_request_id):
+    if not client_request_id or not frappe.db.exists("DocType", "Lead Action Execution"):
+        return None
+    matches = frappe.get_all(
+        "Lead Action Execution",
+        filters={"lead": lead, "client_request_id": client_request_id},
+        fields=["name"],
+        limit_page_length=1,
+    )
+    if not matches:
+        return None
+    action = _get_action_doc(matches[0].name, lead)
+    return {
+        "action": _serialize_action(action),
+        "event": action.get("event"),
+        "context": get_lead_action_context(lead),
+        "idempotent": True,
+    }
+
+
+@frappe.whitelist()
+def submit_lead_action_bundle(lead, bundle, client_request_id=None):
+    """Submit one complete action form as one Frappe transaction.
+
+    No explicit commit is performed. Any validation exception rolls back action,
+    Lead, interest, Event, Communication, and successor changes together.
+    """
+    bundle = _parse_json_object(bundle, _("Action bundle"))
+    client_request_id = client_request_id or bundle.get("client_request_id")
+    replay = _bundle_idempotent_result(lead, client_request_id)
+    if replay:
+        return replay
+
+    lead_doc = _get_lead_doc(lead)
+    _validate_buyer_lead(lead_doc)
+    _require_action_doctype()
+    _lock_lead_workflow(lead)
+
+    action_data = _parse_json_object(bundle.get("action"), _("Action"))
+    result_data = _parse_json_object(bundle.get("result"), _("Action result"))
+    interest_data = _parse_json_object(bundle.get("interest"), _("Interest"))
+    action_name = bundle.get("action_name") or action_data.get("name")
+    execute_now = bool(_to_int(action_data.get("execute_now", 1)))
+
+    action = None
+    if action_name:
+        action = _get_action_doc(action_name, lead)
+    else:
+        action_data = _hydrate_bundle_action_scope(lead_doc, action_data)
+        if not action_data.get("action_type"):
+            frappe.throw(_("Select an action before submitting."))
+        planned = plan_lead_action(
+            lead=lead,
+            action_type=action_data.get("action_type"),
+            purpose=action_data.get("purpose"),
+            scheduled_start=action_data.get("scheduled_start"),
+            notes=action_data.get("notes"),
+            unit=action_data.get("unit"),
+            interest_rows=action_data.get("interest_rows"),
+            execute_now=1 if execute_now else 0,
+        )
+        action = _get_action_doc(planned["action"]["name"], lead)
+        if not execute_now:
+            action.client_request_id = client_request_id
+            action.save(ignore_permissions=True)
+            return {
+                "action": _serialize_action(action),
+                "event": action.get("event"),
+                "execution_mode": "Scheduled",
+                "context": get_lead_action_context(lead),
+            }
+
+    if action.workflow_status in ACTION_TERMINAL_STATUSES:
+        frappe.throw(_("This action is already closed."))
+
+    decision = result_data.get("decision") or result_data.get("outcome")
+    interest_allowed = (
+        action.action_type == "Add Interest"
+        or (
+            action.action_type == "Call"
+            and action.purpose == "Initial Qualification"
+            and result_data.get("contact_result") == "Answered"
+            and result_data.get("qualification") == "Interested"
+        )
+        or (action.action_type == "Meeting" and action.purpose == "Explore Meeting")
+        or (action.action_type == "Offer Decision" and decision == "Change Requirements")
+    )
+
+    applied_interest = None
+    if interest_data:
+        if not interest_allowed:
+            frappe.throw(_("This action cannot change Lead interests."), frappe.PermissionError)
+        applied_interest = _apply_interest_payload(
+            lead_doc,
+            interest_data,
+            require_inventory_requirements=True,
+            apply_status=not (
+                action.action_type == "Offer Decision"
+                and decision == "Change Requirements"
+            ),
+        )
+        _save_workflow_doc(lead_doc)
+        lead_doc = _get_lead_doc(lead)
+
+    if (
+        action.action_type == "Call"
+        and action.purpose == "Initial Qualification"
+        and result_data.get("contact_result") == "Answered"
+        and result_data.get("qualification") == "Interested"
+        and not interest_data
+    ):
+        frappe.throw(_("Interested qualification requires complete interest details in the same form."))
+    if action.action_type == "Add Interest" and not interest_data:
+        frappe.throw(_("Add Interest requires complete interest details."))
+    if action.action_type == "Offer Decision" and decision == "Change Requirements" and not interest_data:
+        frappe.throw(_("Changing requirements requires a new complete interest form."))
+
+    if action.action_type == "Add Interest":
+        result_data["outcome"] = "Added"
+    if action.action_type == "Offer Decision":
+        scoped = _action_interest_rows(action)
+        if decision == "Select an Offer":
+            selected_offer = result_data.get("selected_offer")
+            selected_rows = _parse_json_list(result_data.get("interest_rows"))
+            if selected_offer:
+                selected_rows = [selected_offer]
+            result_data["interest_rows"] = selected_rows
+        elif decision == "Change Requirements":
+            # The approved start-over path closes the complete current offer batch
+            # but retains every row as immutable history.
+            result_data["interest_rows"] = scoped
+
+    next_action = _parse_json_object(result_data.get("next_action"), _("Next action"))
+    if next_action:
+        result_data["next_action"] = _hydrate_bundle_action_scope(
+            lead_doc,
+            next_action,
+        )
+
+    action.reload()
+    completion = complete_lead_action(
+        lead=lead,
+        action_name=action.name,
+        result_data=result_data,
+        client_request_id=client_request_id,
+        expected_modified=str(action.modified),
+    )
+    if applied_interest:
+        completion["interest"] = {
+            "category": applied_interest["category"],
+            "requested_unit": applied_interest["requested_unit"],
+            "rows": [row.name for row in applied_interest["rows"] if row.name],
+        }
+    return completion
