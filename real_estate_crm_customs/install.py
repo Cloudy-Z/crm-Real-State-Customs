@@ -1,7 +1,5 @@
 import json
 
-import json
-
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
@@ -140,13 +138,22 @@ CRM_LEAD_CUSTOM_FIELDS = {
             "fieldtype": "Data",
             "insert_after": "interest_status",
             "hidden": 1,
-            "description": "Stores the previous pipeline status for rollback on offer rejection.",
+            "description": "Legacy audit field. Standalone interests use workflow_origin_status for rollup fallback.",
+        },
+        {
+            "fieldname": "workflow_origin_status",
+            "label": "Workflow Origin Status",
+            "fieldtype": "Data",
+            "insert_after": "previous_status",
+            "hidden": 1,
+            "read_only": 1,
+            "description": "Immutable New or Fresh Lead origin used when no active interest milestone remains.",
         },
         {
             "fieldname": "no_answer_consecutive_count",
             "label": "Current No Answer Streak",
             "fieldtype": "Int",
-            "insert_after": "previous_status",
+            "insert_after": "workflow_origin_status",
             "depends_on": "eval:doc.party_type == 'Buyer'",
             "read_only": 1,
         },
@@ -576,7 +583,17 @@ def sync_real_estate_crm_defaults():
     enforce_crm_lead_status_read_only()
     setup_real_estate_client_scripts()
     setup_crm_portal_defaults()
+    migrate_standalone_lead_interests()
     frappe.db.commit()
+
+
+def migrate_standalone_lead_interests():
+    """Idempotently promote legacy child rows and action JSON scopes after schema sync."""
+    if not frappe.db.exists("DocType", "Lead Interest"):
+        return
+    from real_estate_crm_customs.interest_workflow import run_full_migration
+
+    run_full_migration()
 
 
 def ensure_module_def():

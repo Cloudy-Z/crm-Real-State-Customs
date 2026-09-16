@@ -1,0 +1,335 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "autoname": "hash",
+  "creation": "2026-09-16 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "lead",
+    "record_type",
+    "category",
+    "workflow_status",
+    "is_active",
+    "section_inventory",
+    "unit",
+    "origin_lead_status",
+    "offer_sent_at",
+    "section_request",
+    "request_status",
+    "request_notes",
+    "requested_area",
+    "requested_unit_type",
+    "requested_budget",
+    "requested_project",
+    "requested_developer",
+    "requested_finishing_type",
+    "requested_delivery_time",
+    "section_outsource",
+    "outsource_company",
+    "outsource_broker_name",
+    "outsource_broker_number",
+    "outsource_unit_details",
+    "section_international",
+    "international_type",
+    "international_country",
+    "international_details",
+    "section_history",
+    "latest_action",
+    "last_transition_at",
+    "last_transition_by",
+    "replacement_interest",
+    "replaced_interest",
+    "legacy_child_row",
+    "deletion_request_status",
+    "deletion_request"
+  ],
+  "fields": [
+    {
+      "fieldname": "lead",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Lead",
+      "options": "CRM Lead",
+      "reqd": 1
+    },
+    {
+      "fieldname": "record_type",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Record Type",
+      "options": "Inventory Unit\nRequest\nOutsource\nInternational",
+      "reqd": 1
+    },
+    {
+      "fieldname": "category",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Category",
+      "options": "Resale\nPrimary\nBrokerage Request\nInternational\nOutsource",
+      "reqd": 1
+    },
+    {
+      "default": "Matched",
+      "fieldname": "workflow_status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Interest Workflow Status",
+      "options": "Requested\nMatched\nOffer Sent\nOffer Viewed\nOffer Accepted\nNegotiating\nShowing Scheduled\nShown - Interested\nShown - Considering\nRejected\nSuperseded\nFulfilled\nCancelled",
+      "read_only": 1,
+      "reqd": 1
+    },
+    {
+      "default": "1",
+      "fieldname": "is_active",
+      "fieldtype": "Check",
+      "in_list_view": 1,
+      "label": "Active",
+      "read_only": 1
+    },
+    {
+      "fieldname": "section_inventory",
+      "fieldtype": "Section Break",
+      "label": "Inventory Unit"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Inventory Unit'",
+      "fieldname": "unit",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Real Estate Unit",
+      "options": "Real Estate Unit"
+    },
+    {
+      "fieldname": "origin_lead_status",
+      "fieldtype": "Data",
+      "label": "Origin Lead Status",
+      "read_only": 1
+    },
+    {
+      "fieldname": "offer_sent_at",
+      "fieldtype": "Datetime",
+      "label": "Offer Sent At",
+      "read_only": 1
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Request'",
+      "fieldname": "section_request",
+      "fieldtype": "Section Break",
+      "label": "Requested Unit"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Request'",
+      "fieldname": "request_status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Request Status",
+      "options": "Open\nFulfilled\nCancelled"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Request'",
+      "fieldname": "request_notes",
+      "fieldtype": "Small Text",
+      "label": "Request Notes"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Request'",
+      "fieldname": "requested_area",
+      "fieldtype": "Data",
+      "label": "Requested Location / Area"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Request'",
+      "fieldname": "requested_unit_type",
+      "fieldtype": "Data",
+      "label": "Requested Unit Type"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Request'",
+      "fieldname": "requested_budget",
+      "fieldtype": "Currency",
+      "label": "Requested Maximum Budget"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Request'",
+      "fieldname": "requested_project",
+      "fieldtype": "Link",
+      "label": "Requested Project",
+      "options": "Real Estate Project"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Request'",
+      "fieldname": "requested_developer",
+      "fieldtype": "Link",
+      "label": "Requested Developer",
+      "options": "Property Developer"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Request'",
+      "fieldname": "requested_finishing_type",
+      "fieldtype": "Data",
+      "label": "Requested Finishing"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Request'",
+      "fieldname": "requested_delivery_time",
+      "fieldtype": "Data",
+      "label": "Requested Delivery Time"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Outsource'",
+      "fieldname": "section_outsource",
+      "fieldtype": "Section Break",
+      "label": "Outsource"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Outsource'",
+      "fieldname": "outsource_company",
+      "fieldtype": "Data",
+      "label": "Company Name"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Outsource'",
+      "fieldname": "outsource_broker_name",
+      "fieldtype": "Data",
+      "label": "Broker Name"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Outsource'",
+      "fieldname": "outsource_broker_number",
+      "fieldtype": "Phone",
+      "label": "Broker Number"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'Outsource'",
+      "fieldname": "outsource_unit_details",
+      "fieldtype": "Small Text",
+      "label": "Unit Details"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'International'",
+      "fieldname": "section_international",
+      "fieldtype": "Section Break",
+      "label": "International"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'International'",
+      "fieldname": "international_type",
+      "fieldtype": "Select",
+      "label": "International Type",
+      "options": "Real Estate\nStocks\nCharity Work\nOther"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'International'",
+      "fieldname": "international_country",
+      "fieldtype": "Link",
+      "label": "Country",
+      "options": "Country"
+    },
+    {
+      "depends_on": "eval:doc.record_type == 'International'",
+      "fieldname": "international_details",
+      "fieldtype": "Small Text",
+      "label": "International Details"
+    },
+    {
+      "fieldname": "section_history",
+      "fieldtype": "Section Break",
+      "label": "Workflow History"
+    },
+    {
+      "fieldname": "latest_action",
+      "fieldtype": "Link",
+      "label": "Latest Action",
+      "options": "Lead Action Execution",
+      "read_only": 1
+    },
+    {
+      "fieldname": "last_transition_at",
+      "fieldtype": "Datetime",
+      "label": "Last Transition At",
+      "read_only": 1
+    },
+    {
+      "fieldname": "last_transition_by",
+      "fieldtype": "Link",
+      "label": "Last Transition By",
+      "options": "User",
+      "read_only": 1
+    },
+    {
+      "fieldname": "replacement_interest",
+      "fieldtype": "Link",
+      "label": "Replacement Interest",
+      "options": "Lead Interest",
+      "read_only": 1
+    },
+    {
+      "fieldname": "replaced_interest",
+      "fieldtype": "Link",
+      "label": "Replaced Interest",
+      "options": "Lead Interest",
+      "read_only": 1
+    },
+    {
+      "fieldname": "legacy_child_row",
+      "fieldtype": "Data",
+      "label": "Legacy Child Row",
+      "read_only": 1,
+      "unique": 1
+    },
+    {
+      "fieldname": "deletion_request_status",
+      "fieldtype": "Select",
+      "label": "Deletion Approval",
+      "options": "\nPending Manager Approval\nRejected",
+      "read_only": 1
+    },
+    {
+      "depends_on": "eval:doc.deletion_request_status",
+      "fieldname": "deletion_request",
+      "fieldtype": "Link",
+      "label": "Deletion Approval Task",
+      "options": "ToDo",
+      "read_only": 1
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "links": [],
+  "modified": "2026-09-16 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Real Estate CRM Customs",
+  "name": "Lead Interest",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "role": "System Manager",
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "report": 1,
+      "export": 1
+    },
+    {
+      "role": "Sales Manager",
+      "read": 1,
+      "report": 1,
+      "export": 1
+    },
+    {
+      "role": "Sales User",
+      "read": 1
+    }
+  ],
+  "search_fields": "lead,unit,category,workflow_status",
+  "sort_field": "last_transition_at",
+  "sort_order": "DESC",
+  "title_field": "unit",
+  "track_changes": 1
+}

@@ -51,6 +51,7 @@ fixtures = [
                     "CRM Lead-preferred_delivery_time",
                     "CRM Lead-interest_status",
                     "CRM Lead-previous_status",
+                    "CRM Lead-workflow_origin_status",
                     "CRM Lead-no_answer_consecutive_count",
                     "CRM Lead-no_answer_total_count",
                     "CRM Lead-last_call_outcome",

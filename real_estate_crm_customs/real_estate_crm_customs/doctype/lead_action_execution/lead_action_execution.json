@@ -11,6 +11,7 @@
     "purpose",
     "workflow_status",
     "is_required",
+    "scope_type",
     "section_timing",
     "scheduled_start",
     "started_at",
@@ -22,6 +23,7 @@
     "unit",
     "seller_lead",
     "interest_rows",
+    "interest_scopes",
     "offer_origin_status",
     "source_action",
     "successor_action",
@@ -57,7 +59,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Purpose",
-      "options": "\nInitial Qualification\nRequirements Discovery\nMeeting Confirmation\nShowing Confirmation\nOffer Follow-up\nOffer Decision\nNegotiation Follow-up\nGeneral Follow-up\nGeneral Meeting\nExplore Meeting\nMeeting with Owner\nDiscovery Meeting\nOffer Review\nNegotiation Meeting"
+      "options": "\nInitial Qualification\nRequirements Discovery\nMeeting Confirmation\nShowing Confirmation\nOffer Follow-up\nOffer Decision\nNegotiation Follow-up\nGeneral Follow-up\nGeneral Meeting\nExplore Meeting\nMeeting with Owner\nDiscovery Meeting\nOffer Review\nNegotiation Meeting\nMatch Requested Unit"
     },
     {
       "default": "Planned",
@@ -74,6 +76,16 @@
       "fieldtype": "Check",
       "in_list_view": 1,
       "label": "Required Next Action"
+    },
+    {
+      "default": "Lead",
+      "fieldname": "scope_type",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Action Scope",
+      "options": "Lead\nInterest\nBatch",
+      "read_only": 1,
+      "reqd": 1
     },
     {
       "fieldname": "section_timing",
@@ -137,9 +149,17 @@
       "read_only": 1
     },
     {
+      "description": "Legacy child-row identifiers retained during migration.",
       "fieldname": "interest_rows",
       "fieldtype": "Long Text",
-      "label": "Interest Row Names",
+      "label": "Legacy Interest Row Names",
+      "read_only": 1
+    },
+    {
+      "fieldname": "interest_scopes",
+      "fieldtype": "Table",
+      "label": "Interest Scopes",
+      "options": "Lead Action Interest Scope",
       "read_only": 1
     },
     {
