@@ -26,6 +26,7 @@ from real_estate_crm_customs.interest_workflow import (
     transition_interest as _transition_standalone_interest,
     update_action_scope_results as _update_standalone_scope_results,
 )
+from real_estate_crm_customs.party_roles import normalize_party_role as _normalize_party_role
 
 
 # ---------------------------------------------------------------------------
@@ -45,7 +46,17 @@ LEAD_STATUS_OFFER_SELECTED = "Offer Selected"
 def _get_lead_doc(lead):
     if not frappe.db.exists("CRM Lead", lead):
         frappe.throw(_("Lead {0} was not found.").format(lead), frappe.DoesNotExistError)
-    return frappe.get_doc("CRM Lead", lead)
+    doc = frappe.get_doc("CRM Lead", lead)
+    if frappe.session.user != "Administrator" and not frappe.has_permission(
+        "CRM Lead",
+        ptype="read",
+        doc=doc,
+    ):
+        frappe.throw(
+            _("You do not have permission to read Lead {0}.").format(lead),
+            frappe.PermissionError,
+        )
+    return doc
 
 
 def _to_int(value):
@@ -53,6 +64,29 @@ def _to_int(value):
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _apply_party_role_aliases(doc):
+    raw_party_role = doc.get("party_type")
+    canonical = _normalize_party_role(raw_party_role)
+    if raw_party_role and not canonical:
+        frappe.throw(_("Party Role must be Buyer or Seller."), frappe.ValidationError)
+    aliases = []
+    for fieldname in ("custom_type", "lead_type"):
+        if doc.meta.has_field(fieldname) and doc.get(fieldname):
+            normalized = _normalize_party_role(doc.get(fieldname))
+            if normalized:
+                aliases.append((fieldname, normalized))
+    valid_aliases = {value for _, value in aliases}
+    if (doc.is_new() or not canonical) and len(valid_aliases) > 1:
+        frappe.throw(_("Legacy Lead type fields conflict. Keep one Buyer/Seller value."))
+    alias = next(iter(valid_aliases), None)
+    if doc.is_new() and alias:
+        canonical = alias
+    elif not canonical and alias:
+        canonical = alias
+    canonical = canonical or alias or "Buyer"
+    doc.party_type = canonical
 
 
 def _ensure_lead_status(status, status_type="Ongoing", color="orange", position=30):
@@ -132,15 +166,33 @@ def _validate_inventory_interest(category, units, allow_unavailable_units=None):
         unit = frappe.db.get_value(
             "Real Estate Unit",
             unit_name,
-            ["status", "owner_lead"],
+            ["status", "owner_lead", "inventory_type"],
             as_dict=True,
         )
         if unit.status != "Available" and unit_name not in allowed_unavailable:
             frappe.throw(_("Unit {0} is not available.").format(unit_name))
+        if unit.inventory_type and unit.inventory_type != category:
+            frappe.throw(
+                _("Unit {0} is {1} inventory, not {2}.").format(
+                    unit_name,
+                    unit.inventory_type,
+                    category,
+                )
+            )
         if category == "Resale" and not unit.owner_lead:
             frappe.throw(_("Resale interest must link a seller-owned resale unit."))
         if category == "Primary" and unit.owner_lead:
             frappe.throw(_("Primary interest must link open developer inventory, not a seller-owned resale unit."))
+
+
+def _validate_active_destination(destination):
+    if not destination:
+        return
+    is_active = frappe.db.get_value("Real Estate Destination", destination, "is_active")
+    if is_active is None:
+        frappe.throw(_("Destination {0} was not found.").format(destination), frappe.DoesNotExistError)
+    if not is_active:
+        frappe.throw(_("Destination {0} is inactive.").format(destination), frappe.ValidationError)
 
 
 def _event_priority(subject, starts_on, status):
@@ -173,14 +225,27 @@ IDEAL_STAGE_DAYS = {
 
 def guard_crm_lead_workflow(doc, method=None):
     """Prevent agent-side manual status changes and direct child-row deletion."""
+    _apply_party_role_aliases(doc)
     if doc.is_new():
-        if not doc.get("party_type"):
-            doc.party_type = "Buyer"
         return
 
     previous = doc.get_doc_before_save()
     if not previous:
         return
+
+    if (
+        previous.get("party_type") == "Seller"
+        and doc.get("party_type") != "Seller"
+        and frappe.db.exists("DocType", "Real Estate Unit")
+    ):
+        owned_units = frappe.db.count("Real Estate Unit", {"owner_lead": doc.name})
+        if owned_units:
+            frappe.throw(
+                _("This Lead owns {0} Unit(s). Transfer or remove ownership before changing Party Role.").format(
+                    owned_units
+                ),
+                frappe.ValidationError,
+            )
 
     if previous.get("status") != doc.get("status"):
         allowed = getattr(doc.flags, "real_estate_status_transition", False)
@@ -212,8 +277,19 @@ def _add_lead_comment(lead_doc, text):
         pass
 
 
+def _assert_write_permission(doc):
+    if frappe.session.user == "Administrator":
+        return
+    if not frappe.has_permission(doc.doctype, ptype="write", doc=doc):
+        frappe.throw(
+            _("You do not have permission to update {0} {1}.").format(doc.doctype, doc.name),
+            frappe.PermissionError,
+        )
+
+
 def _validate_buyer_lead(lead_doc):
-    if lead_doc.get("party_type") and lead_doc.get("party_type") != "Buyer":
+    _assert_write_permission(lead_doc)
+    if lead_doc.get("party_type") != "Buyer":
         frappe.throw(_("Only Buyer leads can use buyer interest actions."), frappe.ValidationError)
 
 
@@ -386,6 +462,14 @@ def _apply_interest_payload(
     requested_unit = bool(_to_int(interest_data.get("requested_unit")))
 
     if category in ("Resale", "Primary"):
+        preferred_destination = interest_data.get("preferred_destination")
+        if not preferred_destination and interest_data.get("preferred_area"):
+            preferred_destination = _resolve_destination_alias(
+                location=interest_data.get("preferred_area")
+            )
+            if preferred_destination:
+                interest_data["preferred_destination"] = preferred_destination
+        _validate_active_destination(preferred_destination)
         if requested_unit and units:
             frappe.throw(_("Choose matched inventory units or Requested Unit, not both."))
         if not requested_unit:
@@ -394,11 +478,14 @@ def _apply_interest_payload(
             missing = [
                 label
                 for fieldname, label in (
-                    ("preferred_area", _("Preferred Location / Area")),
+                    ("preferred_destination", _("Preferred Destination")),
                     ("preferred_unit_type", _("Preferred Unit Type")),
                     ("buyer_budget", _("Maximum Budget")),
                 )
-                if not interest_data.get(fieldname)
+                if not (
+                    interest_data.get(fieldname)
+                    or (fieldname == "preferred_destination" and interest_data.get("preferred_area"))
+                )
             ]
             if missing:
                 frappe.throw(_("Complete the interest requirements: {0}.").format(", ".join(missing)))
@@ -414,6 +501,7 @@ def _apply_interest_payload(
     for field in (
         "area_unit",
         "preferred_unit_type",
+        "preferred_destination",
         "preferred_area",
         "preferred_developer",
         "preferred_compound",
@@ -452,6 +540,7 @@ def _apply_interest_payload(
             "request_notes": request_note,
             "request_status": "Open",
             "unit_interest_status": "Active",
+            "requested_destination": interest_data.get("preferred_destination"),
             "requested_area": interest_data.get("preferred_area"),
             "requested_unit_type": interest_data.get("preferred_unit_type"),
             "requested_budget": interest_data.get("buyer_budget"),
@@ -703,6 +792,7 @@ def get_lead_upcoming_events(lead):
     """Get pending events for a lead that may need result logging."""
     if not frappe.db.exists("CRM Lead", lead):
         return []
+    _get_lead_doc(lead)
     participants = frappe.get_all("Event Participants", filters={
         "reference_doctype": "CRM Lead", "reference_docname": lead,
     }, fields=["parent"])
@@ -719,22 +809,60 @@ def get_lead_upcoming_events(lead):
 # Existing Endpoints (preserved)
 # ---------------------------------------------------------------------------
 @frappe.whitelist()
-def create_resale_unit(owner_lead, project, unit_number, price=None):
+def create_resale_unit(
+    owner_lead,
+    project,
+    unit_number,
+    physical_unit_type=None,
+    floor=None,
+    bua=None,
+    bedrooms=0,
+    bathrooms=0,
+    finishing_type=None,
+    delivery_date=None,
+    paid=None,
+    over_price=None,
+    over_is_gross=0,
+    remaining=None,
+    price=None,
+):
     if not frappe.db.exists("CRM Lead", owner_lead):
         frappe.throw(_("Lead {0} was not found.").format(owner_lead), frappe.DoesNotExistError)
     lead = frappe.get_doc("CRM Lead", owner_lead)
-    if lead.get("party_type") and lead.get("party_type") != "Seller":
+    _assert_write_permission(lead)
+    if lead.get("party_type") != "Seller":
         frappe.throw(_("Only Seller leads can list resale units."), frappe.ValidationError)
     if not project:
-        frappe.throw(_("Project is required."), frappe.ValidationError)
+        frappe.throw(_("Compound is required."), frappe.ValidationError)
     if not unit_number:
         frappe.throw(_("Unit Number is required."), frappe.ValidationError)
+    if not physical_unit_type:
+        frappe.throw(_("A physical Unit Type is required."), frappe.ValidationError)
+    if not finishing_type or not delivery_date:
+        frappe.throw(_("Finishing Type and Delivery Date are required."), frappe.ValidationError)
+    if price not in (None, "") and all(value in (None, "") for value in (paid, over_price, remaining)):
+        frappe.throw(
+            _("Legacy Asking Price is ambiguous. Enter Paid, Over Price, and Remaining so Total Gross can be calculated."),
+            frappe.ValidationError,
+        )
     unit = frappe.get_doc({
         "doctype": "Real Estate Unit",
         "project": project,
         "unit_number": unit_number,
-        "unit_type": "Resale",
+        "inventory_type": "Resale",
+        "physical_unit_type": physical_unit_type,
+        "floor": floor,
+        "bua": bua,
+        "bedrooms": bedrooms,
+        "bathrooms": bathrooms,
+        "finishing_type": finishing_type,
+        "delivery_date": delivery_date,
         "status": "Available",
+        "paid": paid,
+        "over_price": over_price,
+        "over_is_gross": _to_int(over_is_gross),
+        "remaining": remaining,
+        # Keep the old argument as an explicitly labelled compatibility value.
         "price": price,
         "owner_lead": owner_lead,
     })
@@ -746,7 +874,7 @@ def create_resale_unit(owner_lead, project, unit_number, price=None):
 def add_interest_request(lead, request_notes, request_status="Open"):
     doc = _get_lead_doc(lead)
     _validate_buyer_lead(doc)
-    doc.append("interested_in_units", {
+    row = doc.append("interested_in_units", {
         "doctype": "Lead Interested Unit",
         "interest_record_type": "Request",
         "interest_category": "Brokerage Request",
@@ -759,7 +887,14 @@ def add_interest_request(lead, request_notes, request_status="Open"):
         doc.previous_status = doc.status
         _set_lead_status(doc, LEAD_STATUS_REQUESTED, _("Brokerage request added"))
     _save_workflow_doc(doc)
-    return doc.as_dict()
+    promoted = _promote_applied_interest_rows(
+        doc,
+        {"category": "Brokerage Request", "requested_unit": True, "rows": [row]},
+    )
+    doc.reload()
+    result = doc.as_dict()
+    result["standalone_interests"] = promoted
+    return result
 
 
 @frappe.whitelist()
@@ -770,18 +905,23 @@ def link_interested_units(lead, units, interest_category="Resale"):
         units = json.loads(units)
     units = list(dict.fromkeys(filter(None, units or [])))
     _validate_inventory_interest(interest_category, units)
-    existing_units = {
-        (row.unit, row.get("interest_category"))
+    existing_rows = {
+        (row.unit, row.get("interest_category")): row
         for row in doc.get("interested_in_units") or []
         if row.unit
     }
     added = 0
+    scoped_rows = []
     for unit in units:
-        if not unit or (unit, interest_category) in existing_units:
+        if not unit:
+            continue
+        existing_row = existing_rows.get((unit, interest_category))
+        if existing_row:
+            scoped_rows.append(existing_row)
             continue
         if not frappe.db.exists("Real Estate Unit", unit):
             continue
-        doc.append("interested_in_units", {
+        row = doc.append("interested_in_units", {
             "doctype": "Lead Interested Unit",
             "interest_record_type": "Inventory Unit",
             "interest_category": interest_category,
@@ -789,11 +929,20 @@ def link_interested_units(lead, units, interest_category="Resale"):
             "unit_interest_status": "Active",
             "proposal_status": "Pending",
         })
-        existing_units.add((unit, interest_category))
+        existing_rows[(unit, interest_category)] = row
+        scoped_rows.append(row)
         added += 1
     if added:
         doc.save(ignore_permissions=True)
-    return doc.as_dict()
+    promoted = _promote_applied_interest_rows(
+        doc,
+        {"category": interest_category, "requested_unit": False, "rows": scoped_rows},
+    ) if scoped_rows else []
+    if promoted:
+        doc.reload()
+    result = doc.as_dict()
+    result["standalone_interests"] = promoted
+    return result
 
 
 @frappe.whitelist()
@@ -803,6 +952,7 @@ def assign_property_unit_to_seller(lead, unit):
     if not frappe.db.exists("Real Estate Unit", unit):
         frappe.throw(_("Real Estate Unit {0} was not found.").format(unit), frappe.DoesNotExistError)
     lead_doc = frappe.get_doc("CRM Lead", lead)
+    _assert_write_permission(lead_doc)
     if lead_doc.get("party_type") != "Seller":
         frappe.throw(_("Only Seller leads can be assigned property units."), frappe.ValidationError)
     unit_doc = frappe.get_doc("Real Estate Unit", unit)
@@ -810,6 +960,17 @@ def assign_property_unit_to_seller(lead, unit):
         frappe.throw(_("Only Available units can be assigned to a seller lead."), frappe.ValidationError)
     if unit_doc.get("owner_lead") and unit_doc.get("owner_lead") != lead:
         frappe.throw(_("Unit {0} is already assigned to seller lead {1}.").format(unit, unit_doc.get("owner_lead")), frappe.ValidationError)
+    if unit_doc.get("inventory_type") != "Resale":
+        active_interest = frappe.db.exists(
+            "Lead Interest",
+            {"unit": unit, "is_active": 1},
+        ) if _standalone_interests_available() else None
+        if active_interest:
+            frappe.throw(
+                _("Unit {0} has an active Buyer Interest and cannot be converted to Resale inventory.").format(unit),
+                frappe.ValidationError,
+            )
+        unit_doc.inventory_type = "Resale"
     unit_doc.owner_lead = lead
     unit_doc.save()
     return unit_doc.as_dict()
@@ -817,9 +978,7 @@ def assign_property_unit_to_seller(lead, unit):
 
 @frappe.whitelist()
 def get_lead_linked_units(lead):
-    if not frappe.db.exists("CRM Lead", lead):
-        frappe.throw(_("Lead {0} was not found.").format(lead), frappe.DoesNotExistError)
-    lead_doc = frappe.get_doc("CRM Lead", lead)
+    lead_doc = _get_lead_doc(lead)
     interest_table_rows = lead_doc.get("interested_in_units") or []
     interested_rows = [row for row in interest_table_rows if row.unit]
     non_unit_rows = [row for row in interest_table_rows if not row.unit]
@@ -831,10 +990,14 @@ def get_lead_linked_units(lead):
     rows = []
     if names:
         rows = frappe.get_all("Real Estate Unit", filters={"name": ["in", list(names)]}, fields=[
-            "name", "sku", "project", "developer", "unit_type", "floor", "finishing_type", "status", "price", "owner_lead", "modified",
+            "name", "unit_number", "sku", "project", "destination", "developer", "inventory_type",
+            "physical_unit_type", "unit_type", "floor", "bua", "bedrooms", "bathrooms",
+            "finishing_type", "delivery_status", "status", "total_gross", "price", "owner_lead", "modified",
         ], order_by="modified desc")
     interested_set = set(interested_units)
     for row in rows:
+        row.unit_type = row.get("physical_unit_type") or row.get("unit_type")
+        row.effective_price, row.price_source = _effective_unit_price(row)
         interest_row = interest_by_unit.get(row.name)
         row.interest_record_type = "Inventory Unit"
         row.interest_row_name = interest_row.name if interest_row else None
@@ -865,6 +1028,7 @@ def get_lead_linked_units(lead):
             "interest_category": category,
             "request_status": interest_row.get("request_status") or "Open",
             "request_notes": interest_row.get("request_notes"),
+            "requested_destination": interest_row.get("requested_destination"),
             "requested_area": interest_row.get("requested_area"),
             "requested_unit_type": interest_row.get("requested_unit_type"),
             "requested_budget": interest_row.get("requested_budget"),
@@ -890,6 +1054,31 @@ def get_lead_linked_units(lead):
     return rows
 
 
+def _effective_unit_price(unit):
+    total_gross = unit.get("total_gross")
+    if total_gross not in (None, "") and float(total_gross or 0) > 0:
+        return float(total_gross), "Total Gross"
+    legacy_price = unit.get("price")
+    if legacy_price not in (None, "") and float(legacy_price or 0) > 0:
+        return float(legacy_price), "Legacy Price"
+    return None, None
+
+
+def _resolve_destination_alias(destination=None, location=None):
+    if not location:
+        return destination
+    destination_from_location = frappe.db.get_value(
+        "Real Estate Destination",
+        {"destination_name": location},
+        "name",
+    )
+    if destination and destination_from_location and destination != destination_from_location:
+        frappe.throw(_("Destination conflicts with the legacy Location filter."), frappe.ValidationError)
+    resolved = destination or destination_from_location
+    _validate_active_destination(resolved)
+    return resolved
+
+
 @frappe.whitelist()
 def get_available_units_for_selection(
     lead=None,
@@ -897,7 +1086,9 @@ def get_available_units_for_selection(
     search=None,
     project=None,
     developer=None,
+    destination=None,
     location=None,
+    physical_unit_type=None,
     unit_type=None,
     finishing_type=None,
     min_price=None,
@@ -905,7 +1096,7 @@ def get_available_units_for_selection(
     include_unit=None,
     page_length=100,
 ):
-    """Return category-valid inventory units with price and project-location details."""
+    """Return category-valid inventory using canonical Compound, Destination, and Total Gross fields."""
     if interest_category not in ("Resale", "Primary"):
         frappe.throw(_("Inventory selection is available only for Resale or Primary interests."))
     if lead:
@@ -914,166 +1105,156 @@ def get_available_units_for_selection(
     else:
         lead_doc = None
 
-    filters = {"status": "Available"}
-    filters["owner_lead"] = ["is", "set" if interest_category == "Resale" else "not set"]
+    destination = _resolve_destination_alias(destination, location)
+    physical_unit_type = physical_unit_type or unit_type
+    filters = {"status": "Available", "inventory_type": interest_category}
     if project:
-        filters["project"] = ["like", "%{0}%".format(project.strip())]
+        filters["project"] = project
     if developer:
-        filters["developer"] = ["like", "%{0}%".format(developer.strip())]
-    if unit_type:
-        filters["unit_type"] = unit_type
+        filters["developer"] = developer
+    if physical_unit_type:
+        filters["physical_unit_type"] = physical_unit_type
     if finishing_type:
         filters["finishing_type"] = finishing_type
+    if destination:
+        filters["destination"] = destination
 
     try:
         minimum = float(min_price) if min_price not in (None, "") else None
         maximum = float(max_price) if max_price not in (None, "") else None
         if minimum is not None and maximum is not None and minimum > maximum:
             frappe.throw(_("Minimum price cannot be greater than maximum price."))
-        if minimum is not None and maximum is not None:
-            filters["price"] = ["between", [minimum, maximum]]
-        elif minimum is not None:
-            filters["price"] = [">=", minimum]
-        elif maximum is not None:
-            filters["price"] = ["<=", maximum]
     except (TypeError, ValueError):
         frappe.throw(_("Price filters must be valid numbers."))
-
-    if location:
-        location_projects = frappe.get_all(
-            "Real Estate Project",
-            filters={"location": ["like", "%{0}%".format(location.strip())]},
-            pluck="name",
-            limit_page_length=500,
-        )
-        if not location_projects:
-            return []
-        if project:
-            location_projects = [
-                project_name
-                for project_name in location_projects
-                if project.strip().lower() in project_name.lower()
-            ]
-            if not location_projects:
-                return []
-        filters["project"] = ["in", location_projects]
 
     or_filters = None
     if search and search.strip():
         pattern = "%{0}%".format(search.strip())
         or_filters = [
             ["Real Estate Unit", "name", "like", pattern],
+            ["Real Estate Unit", "unit_number", "like", pattern],
             ["Real Estate Unit", "sku", "like", pattern],
             ["Real Estate Unit", "project", "like", pattern],
             ["Real Estate Unit", "developer", "like", pattern],
-            ["Real Estate Unit", "unit_type", "like", pattern],
+            ["Real Estate Unit", "physical_unit_type", "like", pattern],
         ]
 
+    fields = [
+        "name",
+        "unit_number",
+        "sku",
+        "project",
+        "destination",
+        "developer",
+        "inventory_type",
+        "physical_unit_type",
+        "unit_type",
+        "floor",
+        "bua",
+        "bedrooms",
+        "bathrooms",
+        "finishing_type",
+        "delivery_status",
+        "status",
+        "total_gross",
+        "price",
+        "owner_lead",
+        "modified",
+    ]
     units = frappe.get_all(
         "Real Estate Unit",
         filters=filters,
         or_filters=or_filters,
-        fields=[
-            "name",
-            "sku",
-            "project",
-            "developer",
-            "unit_type",
-            "floor",
-            "finishing_type",
-            "status",
-            "price",
-            "owner_lead",
-            "modified",
-        ],
+        fields=fields,
         order_by="modified desc",
-        limit_page_length=max(10, min(_to_int(page_length) or 100, 500)),
+        limit_page_length=500,
     )
 
     allowed_existing = include_unit if include_unit and frappe.db.exists("Real Estate Unit", include_unit) else None
     has_active_filters = any(
-        (search, project, developer, location, unit_type, finishing_type, min_price, max_price)
+        (
+            search,
+            project,
+            developer,
+            destination,
+            location,
+            physical_unit_type,
+            finishing_type,
+            min_price,
+            max_price,
+        )
     )
     if allowed_existing and not has_active_filters and not any(unit.name == allowed_existing for unit in units):
-        existing_unit = frappe.db.get_value(
-            "Real Estate Unit",
-            allowed_existing,
-            [
-                "name",
-                "sku",
-                "project",
-                "developer",
-                "unit_type",
-                "floor",
-                "finishing_type",
-                "status",
-                "price",
-                "owner_lead",
-                "modified",
-            ],
-            as_dict=True,
-        )
-        category_matches = existing_unit and (
-            (interest_category == "Resale" and existing_unit.get("owner_lead"))
-            or (interest_category == "Primary" and not existing_unit.get("owner_lead"))
-        )
-        if category_matches:
+        existing_unit = frappe.db.get_value("Real Estate Unit", allowed_existing, fields, as_dict=True)
+        if existing_unit and existing_unit.get("inventory_type") == interest_category:
             units.insert(0, existing_unit)
 
     already_linked = set()
     if lead_doc:
-        already_linked = {
+        already_linked.update(
             row.unit
             for row in lead_doc.get("interested_in_units") or []
             if row.unit and row.unit != allowed_existing
-        }
+        )
+        if _standalone_interests_available():
+            already_linked.update(
+                row.unit
+                for row in _get_standalone_interests(lead_doc.name, include_closed=False)
+                if row.unit and row.unit != allowed_existing
+            )
     units = [unit for unit in units if unit.name not in already_linked]
 
     project_names = list({unit.project for unit in units if unit.project})
-    project_locations = {}
+    projects = {}
     if project_names:
-        project_rows = frappe.get_all(
-            "Real Estate Project",
-            filters={"name": ["in", project_names]},
-            fields=["name", "project_name", "location", "status"],
-            limit_page_length=500,
-        )
-        project_locations = {row.name: row for row in project_rows}
+        projects = {
+            row.name: row
+            for row in frappe.get_all(
+                "Real Estate Project",
+                filters={"name": ["in", project_names]},
+                fields=["name", "project_name", "destination", "location", "status"],
+                limit_page_length=500,
+            )
+        }
 
+    filtered_units = []
     for unit in units:
-        project_row = project_locations.get(unit.project) or {}
-        unit.location = project_row.get("location")
+        project_row = projects.get(unit.project) or {}
+        unit.destination = unit.destination or project_row.get("destination")
+        unit.destination_label = unit.destination or project_row.get("location")
+        unit.location = unit.destination_label
         unit.project_label = project_row.get("project_name") or unit.project
         unit.project_status = project_row.get("status")
-        unit.inventory_category = "Resale" if unit.owner_lead else "Primary"
-    return units
+        unit.inventory_category = unit.inventory_type
+        unit.unit_type = unit.physical_unit_type or unit.unit_type
+        unit.effective_price, unit.price_source = _effective_unit_price(unit)
+        if minimum is not None and (unit.effective_price is None or unit.effective_price < minimum):
+            continue
+        if maximum is not None and (unit.effective_price is None or unit.effective_price > maximum):
+            continue
+        filtered_units.append(unit)
+
+    result_limit = max(10, min(_to_int(page_length) or 100, 500))
+    return filtered_units[:result_limit]
 
 
 @frappe.whitelist()
 def get_property_match_filter_options(interest_category="Resale"):
-    """Return inventory-backed options for non-Link Smart Match filters."""
+    """Return inventory-backed physical Unit Type and finishing options."""
     if interest_category not in ("Resale", "Primary"):
         frappe.throw(_("Inventory filters are available only for Resale or Primary interests."))
-    ownership_filter = ["is", "set" if interest_category == "Resale" else "not set"]
-    unit_filters = {"status": "Available", "owner_lead": ownership_filter}
-    project_names = frappe.get_all(
-        "Real Estate Unit",
-        filters=unit_filters,
-        pluck="project",
+    unit_filters = {"status": "Available", "inventory_type": interest_category}
+    destinations = frappe.get_all(
+        "Real Estate Destination",
+        filters={"is_active": 1},
+        fields=["name", "destination_name"],
+        order_by="destination_name asc",
         limit_page_length=500,
     )
-    locations = []
-    if project_names:
-        locations = frappe.get_all(
-            "Real Estate Project",
-            filters={"name": ["in", list(filter(None, project_names))]},
-            pluck="location",
-            limit_page_length=500,
-        )
     unit_types = frappe.get_all(
         "Real Estate Unit",
         filters=unit_filters,
-        pluck="unit_type",
+        pluck="physical_unit_type",
         limit_page_length=500,
     )
     finishing_types = frappe.get_all(
@@ -1083,7 +1264,8 @@ def get_property_match_filter_options(interest_category="Resale"):
         limit_page_length=500,
     )
     return {
-        "locations": sorted(set(filter(None, locations))),
+        "destinations": [dict(row) for row in destinations],
+        "locations": [row.destination_name for row in destinations],
         "unit_types": sorted(set(filter(None, unit_types))),
         "finishing_types": sorted(set(filter(None, finishing_types))),
     }
@@ -1112,64 +1294,86 @@ def _text_match_ratio(expected, actual):
     return max(token_ratio, sequence_ratio * 0.8)
 
 
-def _lead_property_match_profile(lead_doc, interest_category=None):
-    """Build soft criteria from lead preferences and same-category active inventory history."""
-    profile = frappe._dict({
-        "location": lead_doc.get("preferred_area"),
-        "unit_type": lead_doc.get("preferred_unit_type"),
-        "developer": lead_doc.get("preferred_developer"),
-        "project": lead_doc.get("preferred_compound"),
-        "finishing_type": lead_doc.get("preferred_finishing_type"),
-        "budget_min": None,
-        "budget": lead_doc.get("buyer_budget"),
-        "source": "Lead Preferences",
-    })
+def _lead_property_match_profile(lead_doc, interest_category=None, interest=None):
+    """Build criteria from one scoped Interest, then fill only missing fields from Lead defaults."""
+    profile = frappe._dict(
+        {
+            "destination": lead_doc.get("preferred_destination"),
+            "location": lead_doc.get("preferred_destination") or lead_doc.get("preferred_area"),
+            "unit_type": lead_doc.get("preferred_unit_type"),
+            "developer": lead_doc.get("preferred_developer"),
+            "project": lead_doc.get("preferred_compound"),
+            "finishing_type": lead_doc.get("preferred_finishing_type"),
+            "budget_min": None,
+            "budget": lead_doc.get("buyer_budget"),
+            "source": "Lead Defaults",
+        }
+    )
 
-    reference_unit = None
-    for row in reversed(lead_doc.get("interested_in_units") or []):
-        category_matches = not interest_category or row.get("interest_category") == interest_category
-        if row.get("unit") and row.get("unit_interest_status") != "Lost Interest" and category_matches:
+    scoped_interest = None
+    if interest and _standalone_interests_available():
+        scoped_interest = _get_standalone_interest(lead_doc.name, interest)
+        if interest_category and scoped_interest.category != interest_category:
+            frappe.throw(
+                _("Interest {0} belongs to category {1}, not {2}.").format(
+                    scoped_interest.name,
+                    scoped_interest.category,
+                    interest_category,
+                ),
+                frappe.ValidationError,
+            )
+
+    if scoped_interest:
+        scoped_values = {
+            "destination": scoped_interest.get("requested_destination"),
+            "location": scoped_interest.get("requested_destination") or scoped_interest.get("requested_area"),
+            "unit_type": scoped_interest.get("requested_unit_type"),
+            "developer": scoped_interest.get("requested_developer"),
+            "project": scoped_interest.get("requested_project"),
+            "finishing_type": scoped_interest.get("requested_finishing_type"),
+            "budget": scoped_interest.get("requested_budget"),
+        }
+        if scoped_interest.unit:
             reference_unit = frappe.db.get_value(
                 "Real Estate Unit",
-                row.unit,
-                ["name", "project", "developer", "unit_type", "finishing_type", "price"],
+                scoped_interest.unit,
+                [
+                    "name",
+                    "project",
+                    "destination",
+                    "developer",
+                    "physical_unit_type",
+                    "unit_type",
+                    "finishing_type",
+                    "total_gross",
+                    "price",
+                ],
                 as_dict=True,
-            )
-            if reference_unit:
-                break
-
-    if reference_unit:
-        project_details = (
-            frappe.db.get_value(
-                "Real Estate Project",
-                reference_unit.get("project"),
-                ["location"],
-                as_dict=True,
-            )
-            if reference_unit.get("project")
-            else None
-        ) or {}
-        fallback_values = {
-            "location": project_details.get("location"),
-            "unit_type": reference_unit.get("unit_type"),
-            "developer": reference_unit.get("developer"),
-            "project": reference_unit.get("project"),
-            "finishing_type": reference_unit.get("finishing_type"),
-            "budget": reference_unit.get("price"),
-        }
-        used_fallback = False
-        for fieldname, value in fallback_values.items():
-            if not profile.get(fieldname) and value not in (None, ""):
+            ) or {}
+            effective_price, _ = _effective_unit_price(reference_unit)
+            unit_values = {
+                "destination": reference_unit.get("destination"),
+                "location": reference_unit.get("destination"),
+                "unit_type": reference_unit.get("physical_unit_type") or reference_unit.get("unit_type"),
+                "developer": reference_unit.get("developer"),
+                "project": reference_unit.get("project"),
+                "finishing_type": reference_unit.get("finishing_type"),
+                "budget": effective_price,
+            }
+            scoped_values = {
+                key: scoped_values.get(key) if scoped_values.get(key) not in (None, "") else value
+                for key, value in unit_values.items()
+            }
+        for fieldname, value in scoped_values.items():
+            if value not in (None, ""):
                 profile[fieldname] = value
-                used_fallback = True
-        if used_fallback:
-            profile.source = "Lead Preferences + Latest Active Interest"
-            profile.reference_unit = reference_unit.get("name")
+        profile.source = "Scoped Lead Interest"
+        profile.interest = scoped_interest.name
 
     profile.criteria_count = sum(
         1
         for fieldname in (
-            "location",
+            "destination",
             "unit_type",
             "developer",
             "project",
@@ -1186,15 +1390,18 @@ def _apply_match_profile_overrides(
     profile,
     project=None,
     developer=None,
+    destination=None,
     location=None,
     unit_type=None,
     min_price=None,
     max_price=None,
 ):
+    destination = _resolve_destination_alias(destination, location)
     overrides = {
         "project": project,
         "developer": developer,
-        "location": location,
+        "destination": destination,
+        "location": destination or location,
         "unit_type": unit_type,
         "budget_min": min_price,
         "budget": max_price,
@@ -1209,7 +1416,7 @@ def _apply_match_profile_overrides(
     profile.criteria_count = sum(
         1
         for fieldname in (
-            "location",
+            "destination",
             "unit_type",
             "developer",
             "project",
@@ -1227,10 +1434,24 @@ def _score_property_match(unit, profile):
     total_weight = 0.0
     reasons = []
     gaps = []
+
+    expected_destination = profile.get("destination")
+    if expected_destination:
+        total_weight += 30
+        if unit.get("destination") == expected_destination:
+            weighted_score += 30
+            reasons.append(_("Destination matches"))
+        else:
+            gaps.append(_("Destination differs"))
+    elif profile.get("location"):
+        ratio = _text_match_ratio(profile.get("location"), unit.get("location")) or 0
+        total_weight += 30
+        weighted_score += ratio * 30
+        (reasons if ratio >= 0.8 else gaps).append(_("Legacy location matches") if ratio >= 0.8 else _("Legacy location differs"))
+
     comparisons = (
-        ("Location", profile.get("location"), unit.get("location"), 30),
-        ("Unit type", profile.get("unit_type"), unit.get("unit_type"), 22),
-        ("Project", profile.get("project"), unit.get("project"), 16),
+        ("Unit type", profile.get("unit_type"), unit.get("physical_unit_type") or unit.get("unit_type"), 22),
+        ("Compound", profile.get("project"), unit.get("project"), 16),
         ("Developer", profile.get("developer"), unit.get("developer"), 12),
         ("Finishing", profile.get("finishing_type"), unit.get("finishing_type"), 10),
     )
@@ -1254,7 +1475,7 @@ def _score_property_match(unit, profile):
         try:
             minimum_value = float(minimum_budget) if minimum_budget not in (None, "") else None
             maximum_value = float(maximum_budget) if maximum_budget not in (None, "") else None
-            price_value = float(unit.get("price"))
+            price_value = float(unit.get("effective_price") or 0)
         except (TypeError, ValueError):
             minimum_value = None
             maximum_value = None
@@ -1297,10 +1518,13 @@ def _score_property_match(unit, profile):
 def get_smart_matched_units(
     lead,
     interest_category="Resale",
+    interest=None,
     search=None,
     project=None,
     developer=None,
+    destination=None,
     location=None,
+    physical_unit_type=None,
     unit_type=None,
     finishing_type=None,
     min_price=None,
@@ -1309,18 +1533,20 @@ def get_smart_matched_units(
     page_length=100,
     strict_filters=0,
 ):
-    """Return eligible units ranked by soft proximity to the lead's property profile."""
+    """Return eligible units ranked against one scoped Interest or new-interest draft."""
     lead_doc = _get_lead_doc(lead)
     _validate_buyer_lead(lead_doc)
     strict_filters = _to_int(strict_filters)
+    resolved_type = physical_unit_type or unit_type
     units = get_available_units_for_selection(
         lead=lead,
         interest_category=interest_category,
         search=search,
         project=project if strict_filters else None,
         developer=developer if strict_filters else None,
+        destination=destination if strict_filters else None,
         location=location if strict_filters else None,
-        unit_type=unit_type if strict_filters else None,
+        physical_unit_type=resolved_type if strict_filters else None,
         finishing_type=finishing_type if strict_filters else None,
         min_price=min_price if strict_filters else None,
         max_price=max_price if strict_filters else None,
@@ -1328,11 +1554,12 @@ def get_smart_matched_units(
         page_length=500,
     )
     profile = _apply_match_profile_overrides(
-        _lead_property_match_profile(lead_doc, interest_category),
+        _lead_property_match_profile(lead_doc, interest_category, interest=interest),
         project=project,
         developer=developer,
+        destination=destination,
         location=location,
-        unit_type=unit_type,
+        unit_type=resolved_type,
         min_price=min_price,
         max_price=max_price,
     )
@@ -1342,7 +1569,7 @@ def get_smart_matched_units(
         profile.criteria_count = sum(
             1
             for fieldname in (
-                "location",
+                "destination",
                 "unit_type",
                 "developer",
                 "project",
@@ -1579,15 +1806,23 @@ def update_interest_record(lead, row_name, interest_data):
         and (standalone_existing.record_type if standalone_existing else row.get("interest_record_type")) == "Request"
     )
     if is_unmatched_inventory_request:
+        requested_destination = (
+            interest_data.get("preferred_destination")
+            or (standalone_existing.get("requested_destination") if standalone_existing else row.get("requested_destination"))
+        )
         requested_area = interest_data.get("preferred_area") or row.get("requested_area")
+        if not requested_destination and requested_area:
+            requested_destination = _resolve_destination_alias(location=requested_area)
+        _validate_active_destination(requested_destination)
         requested_type = interest_data.get("preferred_unit_type") or row.get("requested_unit_type")
         requested_budget = interest_data.get("buyer_budget") or row.get("requested_budget")
-        if not requested_area or not requested_type or not requested_budget:
-            frappe.throw(_("Requested area, unit type, and budget are mandatory."))
+        if not (requested_destination or requested_area) or not requested_type or not requested_budget:
+            frappe.throw(_("Requested destination, unit type, and budget are mandatory."))
         row.interest_record_type = "Request"
         row.interest_category = category
         row.unit = None
         row.request_status = "Open"
+        row.requested_destination = requested_destination
         row.requested_area = requested_area
         row.requested_unit_type = requested_type
         row.requested_budget = requested_budget
@@ -1647,6 +1882,7 @@ def update_interest_record(lead, row_name, interest_data):
 
     row.unit_interest_status = interest_data.get("unit_interest_status") or row.get("unit_interest_status") or "Active"
     for field in (
+        "preferred_destination",
         "preferred_area",
         "preferred_unit_type",
         "preferred_developer",
@@ -2602,6 +2838,7 @@ def _interest_workboard(lead_doc):
             "unit": interest.unit,
             "request_status": interest.request_status,
             "request_notes": interest.request_notes,
+            "requested_destination": interest.requested_destination,
             "requested_area": interest.requested_area,
             "requested_unit_type": interest.requested_unit_type,
             "requested_budget": interest.requested_budget,
@@ -3059,12 +3296,21 @@ def _prepare_offer_whatsapp_dispatch(lead_doc, row_names, dispatch_note):
         filters={"name": ["in", unit_names]},
         fields=[
             "name",
+            "unit_number",
             "sku",
             "project",
+            "destination",
             "developer",
+            "inventory_type",
+            "physical_unit_type",
             "unit_type",
             "floor",
+            "bua",
+            "bedrooms",
+            "bathrooms",
             "finishing_type",
+            "delivery_status",
+            "total_gross",
             "price",
             "status",
         ],
@@ -3079,7 +3325,7 @@ def _prepare_offer_whatsapp_dispatch(lead_doc, row_names, dispatch_note):
             for project in frappe.get_all(
                 "Real Estate Project",
                 filters={"name": ["in", project_names]},
-                fields=["name", "project_name", "location"],
+                fields=["name", "project_name", "destination", "location"],
                 limit_page_length=len(project_names),
             )
         }
@@ -3092,25 +3338,30 @@ def _prepare_offer_whatsapp_dispatch(lead_doc, row_names, dispatch_note):
         if not unit:
             frappe.throw(_("Offer unit {0} was not found.").format(interest_row.unit))
         project = projects_by_name.get(unit.project) or {}
-        project_label = project.get("project_name") or unit.project or _("Unspecified project")
-        location = project.get("location") or _("Location not specified")
-        facts = [unit.get("unit_type"), unit.get("finishing_type")]
+        project_label = project.get("project_name") or unit.project or _("Unspecified Compound")
+        destination = unit.get("destination") or project.get("destination") or project.get("location") or _("Destination not specified")
+        facts = [unit.get("physical_unit_type") or unit.get("unit_type"), unit.get("finishing_type")]
         if unit.get("floor") not in (None, ""):
             facts.append(_("Floor {0}").format(unit.floor))
+        if unit.get("bedrooms") not in (None, ""):
+            facts.append(_("{0} bedrooms").format(unit.bedrooms))
+        effective_price, price_source = _effective_unit_price(unit)
         message_lines.extend([
-            "{0}. {1} — {2}".format(index, project_label, location),
+            "{0}. {1} — {2}".format(index, project_label, destination),
             " | ".join(filter(None, facts)),
-            _("Price: {0}").format(_format_offer_price(unit.get("price"))),
-            _("Reference: {0}").format(unit.get("sku") or unit.name),
+            _("Total Gross: {0}").format(_format_offer_price(effective_price)),
+            _("Reference: {0}").format(unit.get("unit_number") or unit.get("sku") or unit.name),
             "",
         ])
         offer_units.append({
             "interest_row": row_name,
             "unit": unit.name,
-            "reference": unit.get("sku") or unit.name,
+            "reference": unit.get("unit_number") or unit.get("sku") or unit.name,
             "project": project_label,
-            "location": location,
-            "price": unit.get("price"),
+            "destination": destination,
+            "location": destination,
+            "price": effective_price,
+            "price_source": price_source,
         })
 
     message = "\n".join(message_lines).strip()

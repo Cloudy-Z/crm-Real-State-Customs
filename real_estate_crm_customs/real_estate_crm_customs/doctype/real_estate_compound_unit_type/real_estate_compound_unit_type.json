@@ -1,0 +1,23 @@
+{
+  "actions": [],
+  "creation": "2026-09-19 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": ["unit_type", "is_available"],
+  "fields": [
+    {"fieldname": "unit_type", "fieldtype": "Link", "in_list_view": 1, "label": "Unit Type", "options": "Real Estate Unit Type", "reqd": 1},
+    {"default": "1", "fieldname": "is_available", "fieldtype": "Check", "in_list_view": 1, "label": "Available"}
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-09-19 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Real Estate CRM Customs",
+  "name": "Real Estate Compound Unit Type",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "idx",
+  "sort_order": "ASC",
+  "states": []
+}

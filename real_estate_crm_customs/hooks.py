@@ -1,5 +1,5 @@
 app_name = "real_estate_crm_customs"
-app_title = "CRM Real State Customs"
+app_title = "CRM Real Estate Customs"
 app_publisher = "Cloudy-Z"
 app_description = "Real estate business workflow customizations for Frappe CRM"
 app_email = "admin@example.com"
@@ -15,17 +15,16 @@ scheduler_events = {
         "0 * * * *": [
             "real_estate_crm_customs.api.update_all_lead_ages",
         ]
-    }
+    },
+    "daily": [
+        "real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit.refresh_delivery_statuses",
+    ],
 }
 
 doc_events = {
     "CRM Lead": {
         "validate": "real_estate_crm_customs.api.guard_crm_lead_workflow",
     },
-    "Real Estate Unit": {
-        "before_insert": "real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit.before_insert_generate_sku",
-        "validate": "real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit.validate_resale_owner",
-    }
 }
 
 fixtures = [
@@ -42,9 +41,8 @@ fixtures = [
                     "CRM Lead-selection_tier",
                     "CRM Lead-buyer_requirements_section",
                     "CRM Lead-buyer_budget",
-                    "CRM Lead-area_unit",
                     "CRM Lead-preferred_unit_type",
-                    "CRM Lead-preferred_area",
+                    "CRM Lead-preferred_destination",
                     "CRM Lead-preferred_developer",
                     "CRM Lead-preferred_compound",
                     "CRM Lead-preferred_finishing_type",
@@ -60,17 +58,6 @@ fixtures = [
                     "CRM Lead-is_primary_buyer",
 
                     "CRM Lead-interested_in_units",
-                    "CRM Lead-seller_property_section",
-                    "CRM Lead-property_title",
-                    "CRM Lead-target_asking_price",
-                    "CRM Lead-property_code",
-                    "CRM Lead-location_reference",
-                    "CRM Lead-seller_compound",
-                    "CRM Lead-seller_developer",
-                    "CRM Lead-seller_unit_type",
-                    "CRM Lead-unit_area",
-                    "CRM Lead-seller_finishing_type",
-                    "CRM Lead-property_documents",
                 ],
             ]
         ],

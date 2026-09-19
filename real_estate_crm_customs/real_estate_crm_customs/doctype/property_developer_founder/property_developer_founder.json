@@ -1,0 +1,23 @@
+{
+  "actions": [],
+  "creation": "2026-09-19 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": ["founder_name", "role_title"],
+  "fields": [
+    {"fieldname": "founder_name", "fieldtype": "Data", "in_list_view": 1, "label": "Founder Name", "reqd": 1},
+    {"fieldname": "role_title", "fieldtype": "Data", "in_list_view": 1, "label": "Role / Title"}
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-09-19 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Real Estate CRM Customs",
+  "name": "Property Developer Founder",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "idx",
+  "sort_order": "ASC",
+  "states": []
+}

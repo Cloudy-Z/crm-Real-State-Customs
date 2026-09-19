@@ -1,106 +1,63 @@
 {
- "actions": [],
- "allow_rename": 1,
- "creation": "2026-05-29 00:00:00.000000",
- "doctype": "DocType",
- "engine": "InnoDB",
- "field_order": [
-  "project_name",
-  "developer",
-  "location",
-  "status"
- ],
- "fields": [
-  {
-   "fieldname": "project_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Project Name",
-   "reqd": 1,
-   "unique": 1
-  },
-  {
-   "fieldname": "developer",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Developer",
-   "options": "Property Developer",
-   "reqd": 1
-  },
-  {
-   "fieldname": "location",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Location"
-  },
-  {
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Status",
-   "options": "Planning\nLaunched\nUnder Construction\nDelivered",
-   "default": "Planning"
-  }
- ],
- "links": [],
- "modified": "2026-05-29 00:00:00.000000",
- "modified_by": "Administrator",
- "module": "Real Estate CRM Customs",
- "name": "Real Estate Project",
- "naming_rule": "By fieldname",
- "owner": "Administrator",
- "permissions": [
-  {
-   "role": "System Manager",
-   "read": 1,
-   "write": 1,
-   "create": 1,
-   "delete": 1,
-   "submit": 0,
-   "cancel": 0,
-   "amend": 0,
-   "report": 1,
-   "export": 1,
-   "share": 1,
-   "print": 1,
-   "email": 1
-  },
-  {
-   "role": "Sales Manager",
-   "read": 1,
-   "write": 1,
-   "create": 1,
-   "delete": 0,
-   "submit": 0,
-   "cancel": 0,
-   "amend": 0,
-   "report": 1,
-   "export": 1,
-   "share": 1,
-   "print": 1,
-   "email": 1
-  },
-  {
-   "role": "Sales User",
-   "read": 1,
-   "write": 1,
-   "create": 1,
-   "delete": 0,
-   "submit": 0,
-   "cancel": 0,
-   "amend": 0,
-   "report": 1,
-   "export": 0,
-   "share": 1,
-   "print": 1,
-   "email": 1
-  }
- ],
- "sort_field": "modified",
- "sort_order": "DESC",
- "states": [],
- "autoname": "field:project_name"
+  "actions": [],
+  "allow_rename": 1,
+  "autoname": "field:project_name",
+  "creation": "2026-05-29 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "compound_information_section",
+    "project_name",
+    "developer",
+    "destination",
+    "location",
+    "status",
+    "compound_details_section",
+    "compound_area",
+    "compound_area_unit",
+    "master_plan",
+    "description",
+    "phases_section",
+    "phases",
+    "available_unit_types_section",
+    "available_unit_types",
+    "amenities_section",
+    "amenities"
+  ],
+  "fields": [
+    {"fieldname": "compound_information_section", "fieldtype": "Section Break", "label": "Compound Information"},
+    {"fieldname": "project_name", "fieldtype": "Data", "in_list_view": 1, "in_standard_filter": 1, "label": "Compound Name", "reqd": 1, "unique": 1},
+    {"fieldname": "developer", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Developer", "options": "Property Developer", "reqd": 1},
+    {"fieldname": "destination", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Destination", "link_filters": "{\"is_active\":1}", "options": "Real Estate Destination", "reqd": 1},
+    {"description": "Legacy free-text geography retained for migration reference only.", "fieldname": "location", "fieldtype": "Data", "hidden": 1, "label": "Legacy Location", "read_only": 1},
+    {"default": "Planning", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1, "in_standard_filter": 1, "label": "Compound Status", "options": "Planning\nLaunched\nUnder Construction\nDelivered", "reqd": 1},
+    {"fieldname": "compound_details_section", "fieldtype": "Section Break", "label": "Compound Details"},
+    {"fieldname": "compound_area", "fieldtype": "Float", "label": "Compound Area"},
+    {"default": "Sq M", "fieldname": "compound_area_unit", "fieldtype": "Select", "label": "Compound Area Unit", "options": "Sq M\nSq Ft"},
+    {"fieldname": "master_plan", "fieldtype": "Attach", "label": "Master Plan"},
+    {"fieldname": "description", "fieldtype": "Text Editor", "label": "Description"},
+    {"collapsible": 1, "fieldname": "phases_section", "fieldtype": "Section Break", "label": "Compound Phases"},
+    {"fieldname": "phases", "fieldtype": "Table", "label": "Compound Phases", "options": "Real Estate Compound Phase"},
+    {"collapsible": 1, "fieldname": "available_unit_types_section", "fieldtype": "Section Break", "label": "Available Unit Types"},
+    {"fieldname": "available_unit_types", "fieldtype": "Table", "label": "Available Unit Types", "options": "Real Estate Compound Unit Type"},
+    {"collapsible": 1, "fieldname": "amenities_section", "fieldtype": "Section Break", "label": "Amenities"},
+    {"fieldname": "amenities", "fieldtype": "Table", "label": "Amenities", "options": "Real Estate Compound Amenity"}
+  ],
+  "links": [
+    {"link_doctype": "Real Estate Unit", "link_fieldname": "project"}
+  ],
+  "modified": "2026-09-19 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Real Estate CRM Customs",
+  "name": "Real Estate Project",
+  "naming_rule": "By fieldname",
+  "owner": "Administrator",
+  "permissions": [
+    {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1},
+    {"create": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "Sales Manager", "share": 1, "write": 1},
+    {"create": 1, "email": 1, "print": 1, "read": 1, "report": 1, "role": "Sales User", "share": 1, "write": 1}
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
 }

@@ -13,14 +13,16 @@
   "doctype": "Custom Field",
   "dt": "CRM Lead",
   "fieldname": "party_type",
-  "label": "Type",
+  "label": "Party Role",
   "fieldtype": "Select",
   "options": "Buyer\nSeller",
   "default": "Buyer",
   "insert_after": "real_estate_section",
   "in_list_view": 1,
   "in_standard_filter": 1,
-  "name": "CRM Lead-party_type"
+  "name": "CRM Lead-party_type",
+  "reqd": 1,
+  "description": "Canonical Buyer/Seller role used by real-estate ownership and workflow rules."
  },
  {
   "doctype": "Custom Field",
@@ -65,35 +67,25 @@
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
-  "fieldname": "area_unit",
-  "label": "Area Unit",
-  "fieldtype": "Select",
-  "options": "Sq M\nSq Ft",
-  "default": "Sq M",
-  "insert_after": "buyer_budget",
-  "depends_on": "eval:doc.party_type == 'Buyer'",
-  "name": "CRM Lead-area_unit"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
   "fieldname": "preferred_unit_type",
-  "label": "Unit Type",
-  "fieldtype": "Select",
-  "options": "\nApartment\nDuplex\nTownhouse\nVilla\nChalet\nStudio\nPenthouse",
-  "insert_after": "area_unit",
+  "label": "Preferred Unit Type",
+  "fieldtype": "Link",
+  "options": "Real Estate Unit Type",
+  "insert_after": "buyer_budget",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "name": "CRM Lead-preferred_unit_type"
  },
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
-  "fieldname": "preferred_area",
-  "label": "Area",
-  "fieldtype": "Data",
+  "fieldname": "preferred_destination",
+  "label": "Preferred Destination",
+  "fieldtype": "Link",
+  "options": "Real Estate Destination",
   "insert_after": "preferred_unit_type",
   "depends_on": "eval:doc.party_type == 'Buyer'",
-  "name": "CRM Lead-preferred_area"
+  "name": "CRM Lead-preferred_destination",
+  "link_filters": "{\"is_active\":1}"
  },
  {
   "doctype": "Custom Field",
@@ -102,7 +94,7 @@
   "label": "Developer",
   "fieldtype": "Link",
   "options": "Property Developer",
-  "insert_after": "preferred_area",
+  "insert_after": "preferred_destination",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "name": "CRM Lead-preferred_developer"
  },
@@ -110,7 +102,7 @@
   "doctype": "Custom Field",
   "dt": "CRM Lead",
   "fieldname": "preferred_compound",
-  "label": "Compound / Project",
+  "label": "Preferred Compound",
   "fieldtype": "Link",
   "options": "Real Estate Project",
   "insert_after": "preferred_developer",
@@ -157,29 +149,47 @@
   "fieldtype": "Check",
   "insert_after": "lead_age",
   "depends_on": "eval:doc.party_type == 'Buyer'",
-  "name": "CRM Lead-is_primary_buyer"
+  "name": "CRM Lead-is_primary_buyer",
+  "read_only": 1,
+  "description": "System-derived from active standalone Primary Lead Interests."
  },
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
-  "fieldname": "no_answer_first_call",
-  "label": "No Answer – 1st Call",
-  "fieldtype": "Check",
+  "fieldname": "interest_status",
+  "label": "Buyer Qualification",
+  "fieldtype": "Select",
+  "options": "\nInterested\nNot Interested",
   "insert_after": "is_primary_buyer",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "read_only": 1,
-  "name": "CRM Lead-no_answer_first_call"
+  "in_list_view": 1,
+  "description": "System-managed Lead qualification; individual lifecycle state is stored on Lead Interest.",
+  "name": "CRM Lead-interest_status"
  },
  {
   "doctype": "Custom Field",
   "dt": "CRM Lead",
-  "fieldname": "no_answer_second_call",
-  "label": "No Answer – 2nd Call",
-  "fieldtype": "Check",
-  "insert_after": "no_answer_first_call",
-  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "fieldname": "previous_status",
+  "label": "Previous Status",
+  "fieldtype": "Data",
+  "insert_after": "interest_status",
+  "hidden": 1,
   "read_only": 1,
-  "name": "CRM Lead-no_answer_second_call"
+  "description": "Legacy origin alias retained during workflow migration.",
+  "name": "CRM Lead-previous_status"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "workflow_origin_status",
+  "label": "Workflow Origin Status",
+  "fieldtype": "Data",
+  "insert_after": "previous_status",
+  "hidden": 1,
+  "read_only": 1,
+  "description": "Immutable New or Fresh Lead origin used by aggregate Lead rollup.",
+  "name": "CRM Lead-workflow_origin_status"
  },
  {
   "doctype": "Custom Field",
@@ -187,7 +197,7 @@
   "fieldname": "no_answer_consecutive_count",
   "label": "Current No Answer Streak",
   "fieldtype": "Int",
-  "insert_after": "no_answer_second_call",
+  "insert_after": "last_call_outcome",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "read_only": 1,
   "name": "CRM Lead-no_answer_consecutive_count"
@@ -209,7 +219,7 @@
   "fieldname": "last_call_outcome",
   "label": "Last Call Outcome",
   "fieldtype": "Select",
-  "options": "\nAnswered\nNo Answer",
+  "options": "\nAnswered\nNo Answer\nWrong Number\nInvalid / Disconnected",
   "insert_after": "no_answer_total_count",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "read_only": 1,
@@ -236,121 +246,6 @@
   "insert_after": "last_call_at",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "name": "CRM Lead-interested_in_units"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
-  "fieldname": "seller_property_section",
-  "label": "Seller Property Onboarding",
-  "fieldtype": "Section Break",
-  "insert_after": "interested_in_units",
-  "depends_on": "eval:doc.party_type == 'Seller'",
-  "collapsible": 1,
-  "name": "CRM Lead-seller_property_section"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
-  "fieldname": "property_title",
-  "label": "Property Title / Designation",
-  "fieldtype": "Data",
-  "insert_after": "seller_property_section",
-  "depends_on": "eval:doc.party_type == 'Seller'",
-  "name": "CRM Lead-property_title"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
-  "fieldname": "target_asking_price",
-  "label": "Target Asking Price",
-  "fieldtype": "Currency",
-  "insert_after": "property_title",
-  "depends_on": "eval:doc.party_type == 'Seller'",
-  "name": "CRM Lead-target_asking_price"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
-  "fieldname": "property_code",
-  "label": "Property Code / Assigned SKU",
-  "fieldtype": "Data",
-  "insert_after": "target_asking_price",
-  "depends_on": "eval:doc.party_type == 'Seller'",
-  "name": "CRM Lead-property_code"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
-  "fieldname": "location_reference",
-  "label": "Location Reference",
-  "fieldtype": "Data",
-  "insert_after": "property_code",
-  "depends_on": "eval:doc.party_type == 'Seller'",
-  "name": "CRM Lead-location_reference"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
-  "fieldname": "seller_compound",
-  "label": "Compound / Project",
-  "fieldtype": "Link",
-  "options": "Real Estate Project",
-  "insert_after": "location_reference",
-  "depends_on": "eval:doc.party_type == 'Seller'",
-  "name": "CRM Lead-seller_compound"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
-  "fieldname": "seller_developer",
-  "label": "Developer",
-  "fieldtype": "Link",
-  "options": "Property Developer",
-  "insert_after": "seller_compound",
-  "depends_on": "eval:doc.party_type == 'Seller'",
-  "name": "CRM Lead-seller_developer"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
-  "fieldname": "seller_unit_type",
-  "label": "Unit Type",
-  "fieldtype": "Select",
-  "options": "\nStandalone Villa\nPenthouse\nStudio\nApartment\nDuplex\nTownhouse\nChalet",
-  "insert_after": "seller_developer",
-  "depends_on": "eval:doc.party_type == 'Seller'",
-  "name": "CRM Lead-seller_unit_type"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
-  "fieldname": "unit_area",
-  "label": "Unit Area",
-  "fieldtype": "Float",
-  "insert_after": "seller_unit_type",
-  "depends_on": "eval:doc.party_type == 'Seller'",
-  "name": "CRM Lead-unit_area"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
-  "fieldname": "seller_finishing_type",
-  "label": "Finishing Type",
-  "fieldtype": "Select",
-  "options": "\nCore & Shell\nSemi-Finished\nFully Finished",
-  "insert_after": "unit_area",
-  "depends_on": "eval:doc.party_type == 'Seller'",
-  "name": "CRM Lead-seller_finishing_type"
- },
- {
-  "doctype": "Custom Field",
-  "dt": "CRM Lead",
-  "fieldname": "property_documents",
-  "label": "Property Documents & Deed Upload",
-  "fieldtype": "Attach",
-  "insert_after": "seller_finishing_type",
-  "depends_on": "eval:doc.party_type == 'Seller'",
-  "name": "CRM Lead-property_documents"
  },
  {
   "doctype": "Custom Field",

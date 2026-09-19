@@ -24,6 +24,7 @@
   "section_break_request",
   "request_status",
   "request_notes",
+  "requested_destination",
   "requested_area",
   "requested_unit_type",
   "requested_budget",
@@ -168,15 +169,27 @@
   },
   {
    "depends_on": "eval:doc.interest_record_type == 'Request'",
+   "fieldname": "requested_destination",
+   "fieldtype": "Link",
+   "label": "Requested Destination",
+   "options": "Real Estate Destination",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.interest_record_type == 'Request'",
    "fieldname": "requested_area",
    "fieldtype": "Data",
-   "label": "Requested Location / Area"
+   "hidden": 1,
+   "label": "Legacy Requested Area",
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.interest_record_type == 'Request'",
    "fieldname": "requested_unit_type",
-   "fieldtype": "Data",
-   "label": "Requested Unit Type"
+   "fieldtype": "Link",
+   "label": "Requested Unit Type",
+   "options": "Real Estate Unit Type",
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.interest_record_type == 'Request'",
@@ -188,7 +201,7 @@
    "depends_on": "eval:doc.interest_record_type == 'Request'",
    "fieldname": "requested_project",
    "fieldtype": "Link",
-   "label": "Requested Project",
+   "label": "Requested Compound",
    "options": "Real Estate Project"
   },
   {

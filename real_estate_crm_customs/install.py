@@ -3,302 +3,28 @@ import json
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
+from real_estate_crm_customs.master_data import ensure_default_unit_types
 
-CRM_LEAD_CUSTOM_FIELDS = {
-    "CRM Lead": [
-        {
-            "fieldname": "real_estate_section",
-            "label": "Real Estate",
-            "fieldtype": "Section Break",
-            "insert_after": "lead_owner",
-            "collapsible": 1,
-        },
-        {
-            "fieldname": "party_type",
-            "label": "Type",
-            "fieldtype": "Select",
-            "options": "Buyer\nSeller",
-            "default": "Buyer",
-            "insert_after": "real_estate_section",
-            "in_list_view": 1,
-            "in_standard_filter": 1,
-        },
-        {
-            "fieldname": "whatsapp_number",
-            "label": "WhatsApp Number",
-            "fieldtype": "Phone",
-            "insert_after": "mobile_no",
-        },
-        {
-            "fieldname": "selection_tier",
-            "label": "Selection Tier",
-            "fieldtype": "Select",
-            "options": "\nA - Priority\nB - Qualified\nC - Nurture",
-            "insert_after": "whatsapp_number",
-        },
-        {
-            "fieldname": "buyer_requirements_section",
-            "label": "Buyer Requirements and Search Filters",
-            "fieldtype": "Section Break",
-            "insert_after": "selection_tier",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-            "collapsible": 1,
-        },
-        {
-            "fieldname": "buyer_budget",
-            "label": "Budget",
-            "fieldtype": "Currency",
-            "insert_after": "buyer_requirements_section",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-        },
-        {
-            "fieldname": "area_unit",
-            "label": "Area Unit",
-            "fieldtype": "Select",
-            "options": "Sq M\nSq Ft",
-            "default": "Sq M",
-            "insert_after": "buyer_budget",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-        },
-        {
-            "fieldname": "preferred_unit_type",
-            "label": "Unit Type",
-            "fieldtype": "Select",
-            "options": "\nApartment\nDuplex\nTownhouse\nVilla\nChalet\nStudio\nPenthouse",
-            "insert_after": "area_unit",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-        },
-        {
-            "fieldname": "preferred_area",
-            "label": "Area",
-            "fieldtype": "Data",
-            "insert_after": "preferred_unit_type",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-        },
-        {
-            "fieldname": "preferred_developer",
-            "label": "Developer",
-            "fieldtype": "Link",
-            "options": "Property Developer",
-            "insert_after": "preferred_area",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-        },
-        {
-            "fieldname": "preferred_compound",
-            "label": "Compound / Project",
-            "fieldtype": "Link",
-            "options": "Real Estate Project",
-            "insert_after": "preferred_developer",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-        },
-        {
-            "fieldname": "preferred_finishing_type",
-            "label": "Finishing Type",
-            "fieldtype": "Select",
-            "options": "\nCore & Shell\nSemi-Finished\nFully Finished",
-            "insert_after": "preferred_compound",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-        },
-        {
-            "fieldname": "preferred_delivery_time",
-            "label": "Delivery Time",
-            "fieldtype": "Data",
-            "insert_after": "preferred_finishing_type",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-        },
-        {
-            "fieldname": "lead_age",
-            "label": "Lead Age",
-            "fieldtype": "Data",
-            "insert_after": "preferred_delivery_time",
-            "read_only": 1,
-            "description": "Auto-updated every hour by the system.",
-        },
-        {
-            "fieldname": "is_primary_buyer",
-            "label": "Primary Buyer",
-            "fieldtype": "Check",
-            "insert_after": "lead_age",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-        },
-        {
-            "fieldname": "interest_status",
-            "label": "Interest Status",
-            "fieldtype": "Select",
-            "options": "\nInterested\nNot Interested",
-            "insert_after": "is_primary_buyer",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-            "read_only": 1,
-            "in_list_view": 1,
-            "description": "System-managed. Only changed via workflow actions.",
-        },
-        {
-            "fieldname": "previous_status",
-            "label": "Previous Status",
-            "fieldtype": "Data",
-            "insert_after": "interest_status",
-            "hidden": 1,
-            "description": "Legacy audit field. Standalone interests use workflow_origin_status for rollup fallback.",
-        },
-        {
-            "fieldname": "workflow_origin_status",
-            "label": "Workflow Origin Status",
-            "fieldtype": "Data",
-            "insert_after": "previous_status",
-            "hidden": 1,
-            "read_only": 1,
-            "description": "Immutable New or Fresh Lead origin used when no active interest milestone remains.",
-        },
-        {
-            "fieldname": "no_answer_consecutive_count",
-            "label": "Current No Answer Streak",
-            "fieldtype": "Int",
-            "insert_after": "workflow_origin_status",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-            "read_only": 1,
-        },
-        {
-            "fieldname": "no_answer_total_count",
-            "label": "Total No Answer Count",
-            "fieldtype": "Int",
-            "insert_after": "no_answer_consecutive_count",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-            "read_only": 1,
-        },
-        {
-            "fieldname": "last_call_outcome",
-            "label": "Last Call Outcome",
-            "fieldtype": "Select",
-            "options": "\nAnswered\nNo Answer\nWrong Number\nInvalid / Disconnected",
-            "insert_after": "no_answer_total_count",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-            "read_only": 1,
-        },
-        {
-            "fieldname": "last_call_at",
-            "label": "Last Call At",
-            "fieldtype": "Datetime",
-            "insert_after": "last_call_outcome",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-            "read_only": 1,
-        },
-        {
-            "fieldname": "interested_in_units",
-            "label": "Interested in Units",
-            "fieldtype": "Table",
-            "options": "Lead Interested Unit",
-            "insert_after": "last_call_at",
-            "depends_on": "eval:doc.party_type == 'Buyer'",
-        },
-        {
-            "fieldname": "seller_property_section",
-            "label": "Seller Property Onboarding",
-            "fieldtype": "Section Break",
-            "insert_after": "interested_in_units",
-            "depends_on": "eval:doc.party_type == 'Seller'",
-            "collapsible": 1,
-        },
-        {
-            "fieldname": "property_title",
-            "label": "Property Title / Designation",
-            "fieldtype": "Data",
-            "insert_after": "seller_property_section",
-            "depends_on": "eval:doc.party_type == 'Seller'",
-        },
-        {
-            "fieldname": "target_asking_price",
-            "label": "Target Asking Price",
-            "fieldtype": "Currency",
-            "insert_after": "property_title",
-            "depends_on": "eval:doc.party_type == 'Seller'",
-        },
-        {
-            "fieldname": "property_code",
-            "label": "Property Code / Assigned SKU",
-            "fieldtype": "Data",
-            "insert_after": "target_asking_price",
-            "depends_on": "eval:doc.party_type == 'Seller'",
-        },
-        {
-            "fieldname": "location_reference",
-            "label": "Location Reference",
-            "fieldtype": "Data",
-            "insert_after": "property_code",
-            "depends_on": "eval:doc.party_type == 'Seller'",
-        },
-        {
-            "fieldname": "seller_compound",
-            "label": "Compound / Project",
-            "fieldtype": "Link",
-            "options": "Real Estate Project",
-            "insert_after": "location_reference",
-            "depends_on": "eval:doc.party_type == 'Seller'",
-        },
-        {
-            "fieldname": "seller_developer",
-            "label": "Developer",
-            "fieldtype": "Link",
-            "options": "Property Developer",
-            "insert_after": "seller_compound",
-            "depends_on": "eval:doc.party_type == 'Seller'",
-        },
-        {
-            "fieldname": "seller_unit_type",
-            "label": "Unit Type",
-            "fieldtype": "Select",
-            "options": "\nStandalone Villa\nPenthouse\nStudio\nApartment\nDuplex\nTownhouse\nChalet",
-            "insert_after": "seller_developer",
-            "depends_on": "eval:doc.party_type == 'Seller'",
-        },
-        {
-            "fieldname": "unit_area",
-            "label": "Unit Area",
-            "fieldtype": "Float",
-            "insert_after": "seller_unit_type",
-            "depends_on": "eval:doc.party_type == 'Seller'",
-        },
-        {
-            "fieldname": "seller_finishing_type",
-            "label": "Finishing Type",
-            "fieldtype": "Select",
-            "options": "\nCore & Shell\nSemi-Finished\nFully Finished",
-            "insert_after": "unit_area",
-            "depends_on": "eval:doc.party_type == 'Seller'",
-        },
-        {
-            "fieldname": "property_documents",
-            "label": "Property Documents & Deed Upload",
-            "fieldtype": "Attach",
-            "insert_after": "seller_finishing_type",
-            "depends_on": "eval:doc.party_type == 'Seller'",
-        },
-    ]
-}
 
-CRM_USER_CUSTOM_FIELDS = {
-    "User": [
-        {
-            "fieldname": "real_estate_agent_outreach_section",
-            "label": "Real Estate Agent Outreach",
-            "fieldtype": "Section Break",
-            "insert_after": "user_emails",
-            "collapsible": 1,
-        },
-        {
-            "fieldname": "real_estate_agent_whatsapp_number",
-            "label": "Agent WhatsApp Number",
-            "fieldtype": "Data",
-            "insert_after": "real_estate_agent_outreach_section",
-        },
-        {
-            "fieldname": "real_estate_agent_outreach_email",
-            "label": "Agent Outreach Email",
-            "fieldtype": "Data",
-            "options": "Email",
-            "insert_after": "real_estate_agent_whatsapp_number",
-        },
-    ]
-}
+def _fixture_custom_field_definitions(*doctypes):
+    """Load stable Custom Field metadata from the exported fixture source of truth."""
+    fixture_path = frappe.get_app_path("real_estate_crm_customs", "fixtures", "custom_field.json")
+    with open(fixture_path, encoding="utf-8") as fixture_file:
+        records = json.load(fixture_file)
+    requested = set(doctypes)
+    grouped = {}
+    for record in records:
+        doctype = record.get("dt")
+        if doctype not in requested:
+            continue
+        field = {
+            key: value
+            for key, value in record.items()
+            if key not in {"doctype", "dt", "name", "owner", "creation", "modified", "modified_by"}
+        }
+        grouped.setdefault(doctype, []).append(field)
+    return grouped
+
 
 LEAD_CONTACT_LAYOUT_FIELDS = [
     "lead_name",
@@ -313,29 +39,15 @@ LEAD_EVENT_LAYOUT_FIELDS = []  # Deprecated: event tracking now uses native Even
 LEAD_REAL_ESTATE_LAYOUT_FIELDS = [
     "party_type",
     "buyer_budget",
-    "area_unit",
     "preferred_unit_type",
-    "preferred_area",
+    "preferred_destination",
     "preferred_developer",
     "preferred_compound",
     "preferred_finishing_type",
     "preferred_delivery_time",
-    "interested_in_units",
-    "property_title",
-    "target_asking_price",
-    "property_code",
-    "location_reference",
-    "seller_compound",
-    "seller_developer",
-    "seller_unit_type",
-    "unit_area",
-    "seller_finishing_type",
-    "property_documents",
 ]
 
 LEAD_CALL_FLAGS_LAYOUT_FIELDS = [
-    "no_answer_first_call",
-    "no_answer_second_call",
     "no_answer_consecutive_count",
     "no_answer_total_count",
     "last_call_outcome",
@@ -373,10 +85,25 @@ REAL_ESTATE_FIELD_LAYOUTS = {
         "type": "Quick Entry",
         "layout": [
             {
+                "label": "Developer Information",
                 "name": "developer_section",
                 "columns": [
-                    {"name": "column_developer_a", "fields": ["developer_name"]},
-                    {"name": "column_developer_b", "fields": ["company_registration"]},
+                    {"name": "column_developer_a", "fields": ["developer_name", "founded_year"]},
+                    {"name": "column_developer_b", "fields": ["company_registration", "founders"]},
+                ],
+            }
+        ],
+    },
+    "Real Estate Destination-Quick Entry": {
+        "doctype": "Real Estate Destination",
+        "type": "Quick Entry",
+        "layout": [
+            {
+                "label": "Destination Information",
+                "name": "destination_section",
+                "columns": [
+                    {"name": "column_destination_a", "fields": ["destination_name", "destination_code"]},
+                    {"name": "column_destination_b", "fields": ["is_active", "description"]},
                 ],
             }
         ],
@@ -386,10 +113,12 @@ REAL_ESTATE_FIELD_LAYOUTS = {
         "type": "Quick Entry",
         "layout": [
             {
-                "name": "project_section",
+                "label": "Compound Information",
+                "name": "compound_section",
                 "columns": [
-                    {"name": "column_project_a", "fields": ["project_name", "developer"]},
-                    {"name": "column_project_b", "fields": ["location", "status"]},
+                    {"name": "column_compound_a", "fields": ["project_name", "developer", "destination"]},
+                    {"name": "column_compound_b", "fields": ["status", "compound_area", "compound_area_unit"]},
+                    {"name": "column_compound_c", "fields": ["available_unit_types", "phases", "amenities", "master_plan", "description"]},
                 ],
             }
         ],
@@ -399,13 +128,22 @@ REAL_ESTATE_FIELD_LAYOUTS = {
         "type": "Quick Entry",
         "layout": [
             {
-                "name": "unit_section",
+                "label": "General Information",
+                "name": "unit_general_section",
                 "columns": [
-                    {"name": "column_unit_a", "fields": ["project", "developer", "sku"]},
-                    {"name": "column_unit_b", "fields": ["unit_type", "floor", "status"]},
-                    {"name": "column_unit_c", "fields": ["finishing_type", "price", "owner_lead"]},
+                    {"name": "column_unit_a", "fields": ["unit_number", "project", "destination", "developer", "inventory_type", "physical_unit_type"]},
+                    {"name": "column_unit_b", "fields": ["floor", "number_of_floors", "bua", "area_uom", "land_area", "garden_area", "roof_area", "terrace_area"]},
+                    {"name": "column_unit_c", "fields": ["bedrooms", "bathrooms", "has_nanny_room", "has_driver_room", "has_storage_room", "has_parking", "finishing_type", "delivery_date", "delivery_status", "status", "owner_lead"]},
                 ],
-            }
+            },
+            {
+                "label": "Financial Information",
+                "name": "unit_financial_section",
+                "columns": [
+                    {"name": "column_unit_financial_a", "fields": ["paid", "over_price", "over_is_gross", "over_net", "down_payment", "remaining"]},
+                    {"name": "column_unit_financial_b", "fields": ["property_tax", "commission", "total_price_net", "total_gross", "maintenance", "rental_monthly_rate", "rental_daily_rate"]},
+                ],
+            },
         ],
     },
     "Real Estate Unit-Side Panel": {
@@ -413,24 +151,11 @@ REAL_ESTATE_FIELD_LAYOUTS = {
         "type": "Side Panel",
         "layout": [
             {
-                "label": "Inventory Details",
-                "name": "unit_details_section",
+                "label": "Unit Summary",
+                "name": "unit_summary_section",
                 "opened": True,
                 "columns": [
-                    {
-                        "name": "column_unit_details",
-                        "fields": [
-                            "sku",
-                            "project",
-                            "developer",
-                            "unit_type",
-                            "floor",
-                            "finishing_type",
-                            "status",
-                            "price",
-                            "owner_lead",
-                        ],
-                    }
+                    {"name": "column_unit_summary", "fields": ["unit_number", "sku", "project", "destination", "developer", "inventory_type", "physical_unit_type", "status", "delivery_status", "total_gross", "owner_lead"]}
                 ],
             }
         ],
@@ -440,15 +165,24 @@ REAL_ESTATE_FIELD_LAYOUTS = {
         "type": "Data Fields",
         "layout": [
             {
-                "label": "Inventory Details",
-                "name": "unit_details_section",
+                "label": "General Information",
+                "name": "unit_general_data_section",
                 "opened": True,
                 "columns": [
-                    {"name": "column_unit_data_a", "fields": ["sku", "project", "developer"]},
-                    {"name": "column_unit_data_b", "fields": ["unit_type", "floor", "finishing_type"]},
-                    {"name": "column_unit_data_c", "fields": ["status", "price", "owner_lead"]},
+                    {"name": "column_unit_data_a", "fields": ["unit_number", "sku", "project", "destination", "developer", "inventory_type", "physical_unit_type"]},
+                    {"name": "column_unit_data_b", "fields": ["floor", "number_of_floors", "bua", "area_uom", "land_area", "garden_area", "roof_area", "terrace_area"]},
+                    {"name": "column_unit_data_c", "fields": ["bedrooms", "bathrooms", "has_nanny_room", "has_driver_room", "has_storage_room", "has_parking", "finishing_type", "delivery_date", "delivery_status", "status", "owner_lead"]},
                 ],
-            }
+            },
+            {
+                "label": "Financial Information",
+                "name": "unit_financial_data_section",
+                "opened": True,
+                "columns": [
+                    {"name": "column_unit_financial_data_a", "fields": ["paid", "over_price", "over_is_gross", "over_net", "down_payment", "remaining", "maintenance"]},
+                    {"name": "column_unit_financial_data_b", "fields": ["property_tax", "commission", "total_price_net", "total_gross", "rental_monthly_rate", "rental_daily_rate"]},
+                ],
+            },
         ],
     },
     "Real Estate Project-Side Panel": {
@@ -456,11 +190,11 @@ REAL_ESTATE_FIELD_LAYOUTS = {
         "type": "Side Panel",
         "layout": [
             {
-                "label": "Project Details",
-                "name": "project_details_section",
+                "label": "Compound Summary",
+                "name": "compound_summary_section",
                 "opened": True,
                 "columns": [
-                    {"name": "column_project_details", "fields": ["project_name", "developer", "location", "status"]}
+                    {"name": "column_compound_summary", "fields": ["project_name", "developer", "destination", "status", "compound_area", "compound_area_unit"]}
                 ],
             }
         ],
@@ -470,12 +204,13 @@ REAL_ESTATE_FIELD_LAYOUTS = {
         "type": "Data Fields",
         "layout": [
             {
-                "label": "Project Details",
-                "name": "project_details_section",
+                "label": "Compound Information",
+                "name": "compound_data_section",
                 "opened": True,
                 "columns": [
-                    {"name": "column_project_data_a", "fields": ["project_name", "developer"]},
-                    {"name": "column_project_data_b", "fields": ["location", "status"]},
+                    {"name": "column_compound_data_a", "fields": ["project_name", "developer", "destination", "status"]},
+                    {"name": "column_compound_data_b", "fields": ["compound_area", "compound_area_unit", "master_plan", "description"]},
+                    {"name": "column_compound_data_c", "fields": ["phases", "available_unit_types", "amenities"]},
                 ],
             }
         ],
@@ -490,24 +225,38 @@ REAL_ESTATE_STANDARD_VIEWS = [
         "icon": "building",
         "columns": [
             {"label": "Developer Name", "type": "Data", "key": "developer_name", "width": "16rem"},
+            {"label": "Founded In", "type": "Int", "key": "founded_year", "width": "10rem"},
             {"label": "Company Registration", "type": "Data", "key": "company_registration", "width": "16rem"},
             {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
         ],
-        "rows": ["name", "developer_name", "company_registration", "modified"],
+        "rows": ["name", "developer_name", "founded_year", "company_registration", "modified"],
     },
     {
-        "label": "Real Estate Projects",
+        "label": "Destinations",
+        "dt": "Real Estate Destination",
+        "route_name": "Real Estate Destinations",
+        "icon": "map-pin",
+        "columns": [
+            {"label": "Destination", "type": "Data", "key": "destination_name", "width": "16rem"},
+            {"label": "Code", "type": "Data", "key": "destination_code", "width": "10rem"},
+            {"label": "Active", "type": "Check", "key": "is_active", "width": "8rem"},
+            {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
+        ],
+        "rows": ["name", "destination_name", "destination_code", "is_active", "modified"],
+    },
+    {
+        "label": "Compounds",
         "dt": "Real Estate Project",
         "route_name": "Real Estate Projects",
         "icon": "building-2",
         "columns": [
-            {"label": "Project Name", "type": "Data", "key": "project_name", "width": "14rem"},
+            {"label": "Compound Name", "type": "Data", "key": "project_name", "width": "14rem"},
+            {"label": "Destination", "type": "Link", "key": "destination", "width": "14rem"},
             {"label": "Developer", "type": "Link", "key": "developer", "width": "14rem"},
-            {"label": "Location", "type": "Data", "key": "location", "width": "14rem"},
             {"label": "Status", "type": "Select", "key": "status", "width": "10rem"},
             {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
         ],
-        "rows": ["name", "project_name", "developer", "location", "status", "modified"],
+        "rows": ["name", "project_name", "destination", "developer", "status", "modified"],
     },
     {
         "label": "Real Estate Units",
@@ -515,54 +264,26 @@ REAL_ESTATE_STANDARD_VIEWS = [
         "route_name": "Real Estate Units",
         "icon": "home",
         "columns": [
-            {"label": "SKU", "type": "Data", "key": "sku", "width": "12rem"},
-            {"label": "Project", "type": "Link", "key": "project", "width": "14rem"},
-            {"label": "Developer", "type": "Link", "key": "developer", "width": "14rem"},
-            {"label": "Unit Type", "type": "Select", "key": "unit_type", "width": "10rem"},
-            {"label": "Floor", "type": "Int", "key": "floor", "width": "7rem"},
-            {"label": "Finishing", "type": "Select", "key": "finishing_type", "width": "12rem"},
-            {"label": "Status", "type": "Select", "key": "status", "width": "10rem"},
-            {"label": "Price", "type": "Currency", "key": "price", "width": "10rem"},
-            {"label": "Owner Lead", "type": "Link", "key": "owner_lead", "width": "14rem"},
+            {"label": "Unit Number", "type": "Data", "key": "unit_number", "width": "10rem"},
+            {"label": "Compound", "type": "Link", "key": "project", "width": "14rem"},
+            {"label": "Destination", "type": "Link", "key": "destination", "width": "14rem"},
+            {"label": "Inventory Type", "type": "Select", "key": "inventory_type", "width": "10rem"},
+            {"label": "Unit Type", "type": "Link", "key": "physical_unit_type", "width": "10rem"},
+            {"label": "Availability", "type": "Select", "key": "status", "width": "10rem"},
+            {"label": "Total Gross", "type": "Currency", "key": "total_gross", "width": "10rem"},
+            {"label": "Seller Owner", "type": "Link", "key": "owner_lead", "width": "14rem"},
             {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
         ],
-        "rows": [
-            "name",
-            "sku",
-            "project",
-            "developer",
-            "unit_type",
-            "floor",
-            "finishing_type",
-            "status",
-            "price",
-            "owner_lead",
-            "modified",
-        ],
+        "rows": ["name", "unit_number", "sku", "project", "destination", "developer", "inventory_type", "physical_unit_type", "status", "total_gross", "owner_lead", "modified"],
     },
 ]
 
 REAL_ESTATE_QUICK_FILTERS = {
-    "CRM Lead": [
-        "lead_name",
-        "email",
-        "organization",
-        "status",
-        "source",
-        "party_type",
-        "lead_owner",
-        "buyer_budget",
-        "preferred_unit_type",
-        "preferred_developer",
-        "preferred_compound",
-        "target_asking_price",
-        "seller_unit_type",
-        "seller_developer",
-        "selection_tier",
-    ],
-    "Real Estate Unit": ["sku", "project", "developer", "unit_type", "floor", "finishing_type", "status", "owner_lead"],
-    "Property Developer": ["developer_name", "company_registration"],
-    "Real Estate Project": ["project_name", "developer", "location", "status"],
+    "CRM Lead": ["lead_name", "email", "status", "source", "party_type", "lead_owner", "buyer_budget", "preferred_destination", "preferred_unit_type", "preferred_developer", "preferred_compound", "selection_tier"],
+    "Real Estate Unit": ["unit_number", "sku", "project", "destination", "developer", "inventory_type", "physical_unit_type", "floor", "finishing_type", "status", "delivery_status", "owner_lead"],
+    "Property Developer": ["developer_name", "founded_year", "company_registration"],
+    "Real Estate Project": ["project_name", "destination", "developer", "status"],
+    "Real Estate Destination": ["destination_name", "destination_code", "is_active"],
 }
 
 
@@ -576,6 +297,7 @@ def after_migrate():
 
 def sync_real_estate_crm_defaults():
     ensure_module_def()
+    ensure_default_unit_types()
     setup_crm_lead_custom_fields()
     setup_user_agent_custom_fields()
     ensure_real_estate_lead_statuses()
@@ -613,61 +335,83 @@ def setup_crm_lead_custom_fields():
     if not frappe.db.exists("DocType", "CRM Lead"):
         frappe.throw("CRM Lead DocType was not found. Install Frappe CRM before installing this custom app.")
 
-    # Pre-cleanup: delete Custom Fields whose fieldtype has changed
-    # Frappe does not allow fieldtype changes via create_custom_fields(update=True)
-    _fix_fieldtype_mismatches("CRM Lead", CRM_LEAD_CUSTOM_FIELDS.get("CRM Lead", []))
-
-    # Remove deprecated country code fields (replaced by Phone fieldtype's built-in picker)
-    _remove_deprecated_custom_fields("CRM Lead", [
-        "mobile_country_code", "whatsapp_country_code",
-        "no_answer_first_call", "no_answer_second_call",
-        "is_interested", "is_not_interested",
-    ])
-
-    create_custom_fields(CRM_LEAD_CUSTOM_FIELDS, update=True)
+    custom_fields = _fixture_custom_field_definitions("CRM Lead")
+    _promote_varchar_custom_field_to_link(
+        "CRM Lead",
+        "preferred_unit_type",
+        "Real Estate Unit Type",
+    )
+    create_custom_fields(custom_fields, update=True)
+    _deprecate_custom_field_metadata(
+        "CRM Lead",
+        (
+            "custom_type",
+            "lead_type",
+            "mobile_country_code",
+            "whatsapp_country_code",
+            "no_answer_first_call",
+            "no_answer_second_call",
+            "is_interested",
+            "is_not_interested",
+            "area_unit",
+            "preferred_area",
+            "seller_property_section",
+            "property_title",
+            "target_asking_price",
+            "property_code",
+            "location_reference",
+            "seller_compound",
+            "seller_developer",
+            "seller_unit_type",
+            "unit_area",
+            "seller_finishing_type",
+            "property_documents",
+        ),
+    )
     frappe.clear_cache(doctype="CRM Lead")
 
 
-def _fix_fieldtype_mismatches(doctype, field_definitions):
-    """Delete existing Custom Fields whose fieldtype doesn't match the desired definition.
-    This allows create_custom_fields to recreate them with the correct type."""
-    for field_def in field_definitions:
-        fieldname = field_def.get("fieldname")
-        desired_type = field_def.get("fieldtype")
-        cf_name = f"{doctype}-{fieldname}"
-        if frappe.db.exists("Custom Field", cf_name):
-            existing_type = frappe.db.get_value("Custom Field", cf_name, "fieldtype")
-            if existing_type and existing_type != desired_type:
-                # Drop the DB column first to avoid schema conflicts
-                if frappe.db.has_column(doctype, fieldname):
-                    try:
-                        frappe.db.sql_ddl(f"ALTER TABLE `tab{doctype}` DROP COLUMN `{fieldname}`")
-                    except Exception:
-                        pass
-                frappe.delete_doc("Custom Field", cf_name, ignore_permissions=True, force=True)
-                frappe.db.commit()
+def _promote_varchar_custom_field_to_link(doctype, fieldname, options):
+    """Change metadata only for a varchar-backed Data/Select/Link field; preserve every value."""
+    custom_field_name = f"{doctype}-{fieldname}"
+    if not frappe.db.exists("Custom Field", custom_field_name):
+        return
+    fieldtype = frappe.db.get_value("Custom Field", custom_field_name, "fieldtype")
+    if fieldtype not in {"Data", "Select", "Link"}:
+        frappe.throw(
+            f"Cannot safely migrate {custom_field_name} from {fieldtype} to Link without an explicit data migration."
+        )
+    frappe.db.set_value(
+        "Custom Field",
+        custom_field_name,
+        {"fieldtype": "Link", "options": options},
+        update_modified=False,
+    )
 
 
-def _remove_deprecated_custom_fields(doctype, fieldnames):
-    """Remove Custom Fields that are no longer needed."""
+def _deprecate_custom_field_metadata(doctype, fieldnames):
+    """Hide legacy metadata without deleting its column or historical values."""
     for fieldname in fieldnames:
         cf_name = f"{doctype}-{fieldname}"
-        if frappe.db.exists("Custom Field", cf_name):
-            if frappe.db.has_column(doctype, fieldname):
-                try:
-                    frappe.db.sql_ddl(f"ALTER TABLE `tab{doctype}` DROP COLUMN `{fieldname}`")
-                except Exception:
-                    pass
-            frappe.delete_doc("Custom Field", cf_name, ignore_permissions=True, force=True)
-            frappe.db.commit()
+        if not frappe.db.exists("Custom Field", cf_name):
+            if frappe.get_meta(doctype).has_field(fieldname):
+                make_property_setter(doctype, fieldname, "hidden", "1", "Check")
+                make_property_setter(doctype, fieldname, "read_only", "1", "Check")
+            continue
+        custom_field = frappe.get_doc("Custom Field", cf_name)
+        custom_field.hidden = 1
+        custom_field.read_only = 1
+        custom_field.in_list_view = 0
+        custom_field.in_standard_filter = 0
+        custom_field.description = "Deprecated compatibility field; canonical data has been migrated where safe."
+        custom_field.save(ignore_permissions=True)
 
 
 def setup_user_agent_custom_fields():
     if not frappe.db.exists("DocType", "User"):
         return
 
-    _fix_fieldtype_mismatches("User", CRM_USER_CUSTOM_FIELDS.get("User", []))
-    create_custom_fields(CRM_USER_CUSTOM_FIELDS, update=True)
+    create_custom_fields(_fixture_custom_field_definitions("User"), update=True)
     frappe.clear_cache(doctype="User")
 
 
@@ -688,23 +432,6 @@ def ensure_real_estate_lead_statuses():
             continue
         doc = frappe.get_doc({"doctype": "CRM Lead Status", **status})
         doc.insert(ignore_permissions=True)
-
-    # Remove ALL statuses not in our pipeline (including upstream CRM defaults)
-    keep_statuses = {s["lead_status"] for s in statuses}
-    all_existing = frappe.get_all("CRM Lead Status", pluck="name")
-    for status_name in all_existing:
-        if status_name not in keep_statuses:
-            # Only delete if no leads reference this status
-            leads_with_status = frappe.db.count("CRM Lead", {"status": status_name})
-            if leads_with_status == 0:
-                frappe.delete_doc("CRM Lead Status", status_name, ignore_permissions=True, force=True)
-            else:
-                # Reassign leads to "New" before deleting
-                frappe.db.sql(
-                    "UPDATE `tabCRM Lead` SET status = %s WHERE status = %s",
-                    ("New", status_name),
-                )
-                frappe.delete_doc("CRM Lead Status", status_name, ignore_permissions=True, force=True)
 
 
 def enforce_crm_lead_phone_mandatory():
@@ -774,16 +501,12 @@ def enforce_crm_lead_phone_mandatory():
     except Exception:
         pass
 
-    # Drop legacy 'phone' column if it still exists
-    if frappe.db.has_column("CRM Lead", "phone"):
-        try:
-            frappe.db.sql_ddl("ALTER TABLE `tabCRM Lead` DROP COLUMN `phone`")
-        except Exception:
-            pass
-
     # --- Standard setup (runs on both fresh and upgrade) ---
     # Ensure mobile_no is explicitly not mandatory (client script handles validation)
     make_property_setter("CRM Lead", "mobile_no", "reqd", "0", "Check")
+    if frappe.get_meta("CRM Lead").has_field("phone"):
+        make_property_setter("CRM Lead", "phone", "hidden", "1", "Check")
+        make_property_setter("CRM Lead", "phone", "reqd", "0", "Check")
 
     # Clear DocType cache so the schema changes take effect immediately
     frappe.clear_cache(doctype="CRM Lead")
@@ -839,14 +562,16 @@ REAL_ESTATE_UNIT_DEFAULTS_SCRIPT = r"""
 frappe.ui.form.on('Real Estate Unit', {
     setup(frm) {
         frm.set_query('project', () => ({ filters: {} }));
+        frm.set_query('owner_lead', () => ({ filters: { party_type: 'Seller' } }));
+        frm.set_query('physical_unit_type', () => ({ filters: { is_active: 1 } }));
     },
     onload(frm) {
         if (frm.is_new()) {
             if (!frm.doc.status) {
                 frm.set_value('status', 'Available');
             }
-            if (!frm.doc.created_by && frappe.session.user) {
-                frm.set_value('created_by', frappe.session.user);
+            if (!frm.doc.inventory_type) {
+                frm.set_value('inventory_type', 'Primary');
             }
         }
     },
@@ -873,7 +598,7 @@ frappe.ui.form.on('CRM Lead', {
                         {
                             fieldname: 'project',
                             fieldtype: 'Link',
-                            label: __('Project'),
+                            label: __('Compound'),
                             options: 'Real Estate Project',
                             reqd: 1,
                         },
@@ -884,9 +609,61 @@ frappe.ui.form.on('CRM Lead', {
                             reqd: 1,
                         },
                         {
-                            fieldname: 'price',
+                            fieldname: 'physical_unit_type',
+                            fieldtype: 'Link',
+                            label: __('Unit Type'),
+                            options: 'Real Estate Unit Type',
+                            reqd: 1,
+                        },
+                        {
+                            fieldname: 'finishing_type',
+                            fieldtype: 'Select',
+                            label: __('Finishing Type'),
+                            options: '\nCore & Shell\nSemi-Finished\nFully Finished\nUltra Super Lux',
+                            reqd: 1,
+                        },
+                        {
+                            fieldname: 'delivery_date',
+                            fieldtype: 'Date',
+                            label: __('Delivery Date'),
+                            reqd: 1,
+                        },
+                        {
+                            fieldname: 'bedrooms',
+                            fieldtype: 'Int',
+                            label: __('Bedrooms'),
+                            default: 0,
+                        },
+                        {
+                            fieldname: 'bathrooms',
+                            fieldtype: 'Int',
+                            label: __('Bathrooms'),
+                            default: 0,
+                        },
+                        {
+                            fieldname: 'bua',
+                            fieldtype: 'Float',
+                            label: __('BUA'),
+                        },
+                        {
+                            fieldname: 'paid',
                             fieldtype: 'Currency',
-                            label: __('Asking Price'),
+                            label: __('Paid'),
+                        },
+                        {
+                            fieldname: 'over_price',
+                            fieldtype: 'Currency',
+                            label: __('Over Price'),
+                        },
+                        {
+                            fieldname: 'over_is_gross',
+                            fieldtype: 'Check',
+                            label: __('Over Is Gross'),
+                        },
+                        {
+                            fieldname: 'remaining',
+                            fieldtype: 'Currency',
+                            label: __('Remaining'),
                         },
                     ],
                     primary_action_label: __('Create Property'),
@@ -897,7 +674,16 @@ frappe.ui.form.on('CRM Lead', {
                                 owner_lead: frm.doc.name,
                                 project: values.project,
                                 unit_number: values.unit_number,
-                                price: values.price,
+                                physical_unit_type: values.physical_unit_type,
+                                finishing_type: values.finishing_type,
+                                delivery_date: values.delivery_date,
+                                bedrooms: values.bedrooms || 0,
+                                bathrooms: values.bathrooms || 0,
+                                bua: values.bua || null,
+                                paid: values.paid,
+                                over_price: values.over_price,
+                                over_is_gross: values.over_is_gross,
+                                remaining: values.remaining,
                             },
                             callback() {
                                 frm.reload_doc();

@@ -71,6 +71,7 @@ STATUS_RANK = {
 LEGACY_COPY_FIELDS = (
     "request_status",
     "request_notes",
+    "requested_destination",
     "requested_area",
     "requested_unit_type",
     "requested_budget",

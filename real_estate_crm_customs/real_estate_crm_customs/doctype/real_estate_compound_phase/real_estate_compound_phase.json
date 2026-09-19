@@ -1,0 +1,24 @@
+{
+  "actions": [],
+  "creation": "2026-09-19 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": ["phase_name", "status", "delivery_date"],
+  "fields": [
+    {"fieldname": "phase_name", "fieldtype": "Data", "in_list_view": 1, "label": "Phase Name", "reqd": 1},
+    {"default": "Planning", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1, "label": "Status", "options": "Planning\nLaunched\nUnder Construction\nDelivered", "reqd": 1},
+    {"fieldname": "delivery_date", "fieldtype": "Date", "in_list_view": 1, "label": "Delivery Date"}
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-09-19 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "Real Estate CRM Customs",
+  "name": "Real Estate Compound Phase",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "idx",
+  "sort_order": "ASC",
+  "states": []
+}
