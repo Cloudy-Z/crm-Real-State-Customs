@@ -1,5 +1,6 @@
-import json
+import configparser
 import ast
+import json
 from pathlib import Path
 import unittest
 
@@ -26,6 +27,23 @@ def literal_assignment(path, name):
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_patches_file_uses_complete_frappe_v16_ini_format(self):
+        parser = configparser.ConfigParser(allow_no_value=True, delimiters="\n")
+        parser.optionxform = str
+        parser.read(ROOT / "real_estate_crm_customs" / "patches.txt")
+        self.assertEqual(
+            parser.sections(),
+            ["pre_model_sync", "post_model_sync"],
+        )
+        self.assertIn(
+            "real_estate_crm_customs.patches.v0_0_1.setup_crm_lead_customizations",
+            parser["pre_model_sync"],
+        )
+        self.assertIn(
+            "real_estate_crm_customs.patches.v16_0.unify_real_estate_fields",
+            parser["post_model_sync"],
+        )
+
     def test_every_custom_doctype_field_order_is_valid(self):
         for path in DOCTYPE_ROOT.glob("*/*.json"):
             schema = json.loads(path.read_text())
