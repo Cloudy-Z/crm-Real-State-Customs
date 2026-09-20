@@ -27,6 +27,14 @@ def literal_assignment(path, name):
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_every_custom_doctype_has_a_python_controller(self):
+        for schema_path in DOCTYPE_ROOT.glob("*/*.json"):
+            controller_path = schema_path.with_suffix(".py")
+            self.assertTrue(
+                controller_path.exists(),
+                f"Missing Frappe controller: {controller_path.relative_to(ROOT)}",
+            )
+
     def test_patches_file_uses_complete_frappe_v16_ini_format(self):
         parser = configparser.ConfigParser(allow_no_value=True, delimiters="\n")
         parser.optionxform = str
