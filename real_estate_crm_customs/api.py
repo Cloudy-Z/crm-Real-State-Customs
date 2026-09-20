@@ -16,10 +16,11 @@ from real_estate_crm_customs.interest_workflow import (
     action_interest_names as _standalone_action_interest_names,
     append_action_scopes as _append_action_scopes,
     assert_interests_available as _assert_standalone_interests_available,
-    ensure_interest_for_legacy_row as _ensure_standalone_interest,
+    create_interest as _create_standalone_interest,
     get_interest as _get_standalone_interest,
     get_interests as _get_standalone_interests,
     is_available as _standalone_interests_available,
+    mirror_interest_to_legacy as _mirror_standalone_interest,
     open_action_for_interest as _open_standalone_action_for_interest,
     reconcile_lead_rollup as _reconcile_standalone_rollup,
     resolve_interest_names as _resolve_standalone_interest_names,
@@ -336,6 +337,11 @@ def _create_lead_event(lead, subject, starts_on, event_type="Private", meeting_t
 # ---------------------------------------------------------------------------
 def update_all_lead_ages():
     """Scheduled job: updates lead_age field for all leads every hour."""
+    if not frappe.db.exists("DocType", "CRM Lead") or not frappe.db.has_column(
+        "CRM Lead",
+        "lead_age",
+    ):
+        return
     leads = frappe.get_all("CRM Lead", fields=["name", "creation"], limit_page_length=0)
     now = now_datetime()
     for lead in leads:
@@ -346,7 +352,6 @@ def update_all_lead_ages():
         remaining_hours = int(hours % 24)
         age_str = f"{days}d {remaining_hours}h" if days > 0 else f"{remaining_hours}h"
         frappe.db.set_value("CRM Lead", lead.name, "lead_age", age_str, update_modified=False)
-    frappe.db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -472,6 +477,8 @@ def _apply_interest_payload(
         _validate_active_destination(preferred_destination)
         if requested_unit and units:
             frappe.throw(_("Choose matched inventory units or Requested Unit, not both."))
+        if requested_unit and not preferred_destination:
+            frappe.throw(_("Requested inventory requires a canonical Destination."))
         if not requested_unit:
             _validate_inventory_interest(category, units)
         if require_inventory_requirements:
@@ -484,7 +491,6 @@ def _apply_interest_payload(
                 )
                 if not (
                     interest_data.get(fieldname)
-                    or (fieldname == "preferred_destination" and interest_data.get("preferred_area"))
                 )
             ]
             if missing:
@@ -512,34 +518,42 @@ def _apply_interest_payload(
         if field in interest_data:
             doc.set(field, interest_data[field])
 
-    added_rows = []
+    interest_values = []
+    existing_units = set()
+    existing_interest_names = []
+    if _standalone_interests_available() and units:
+        existing_interests = frappe.get_all(
+            "Lead Interest",
+            filters={
+                "lead": doc.name,
+                "record_type": "Inventory Unit",
+                "category": category,
+                "unit": ["in", units],
+            },
+            fields=["name", "unit"],
+        )
+        existing_units = {row.unit for row in existing_interests}
+        existing_interest_names = [row.name for row in existing_interests]
     for unit in units:
-        if any(
-            row.unit == unit and row.get("interest_category") == category
-            for row in (doc.get("interested_in_units") or [])
-            if row.unit
-        ):
+        if unit in existing_units:
             continue
-        added_rows.append(doc.append("interested_in_units", {
-            "doctype": "Lead Interested Unit",
-            "interest_record_type": "Inventory Unit",
-            "interest_category": category,
+        interest_values.append({
+            "record_type": "Inventory Unit",
+            "category": category,
             "unit": unit,
-            "unit_interest_status": "Active",
-            "proposal_status": "Pending",
-        }))
+            "workflow_status": "Matched",
+        })
 
     if requested_unit or category == "Brokerage Request":
         request_note = interest_data.get("request_notes") or _(
             "Requested {0} unit — no suitable inventory match."
         ).format(category)
-        added_rows.append(doc.append("interested_in_units", {
-            "doctype": "Lead Interested Unit",
-            "interest_record_type": "Request",
-            "interest_category": category,
+        interest_values.append({
+            "record_type": "Request",
+            "category": category,
+            "workflow_status": "Requested",
             "request_notes": request_note,
             "request_status": "Open",
-            "unit_interest_status": "Active",
             "requested_destination": interest_data.get("preferred_destination"),
             "requested_area": interest_data.get("preferred_area"),
             "requested_unit_type": interest_data.get("preferred_unit_type"),
@@ -548,42 +562,52 @@ def _apply_interest_payload(
             "requested_developer": interest_data.get("preferred_developer"),
             "requested_finishing_type": interest_data.get("preferred_finishing_type"),
             "requested_delivery_time": interest_data.get("preferred_delivery_time"),
-        }))
+        })
 
     if category == "International":
-        added_rows.append(doc.append("interested_in_units", {
-            "doctype": "Lead Interested Unit",
-            "interest_record_type": "International",
-            "interest_category": category,
+        interest_values.append({
+            "record_type": "International",
+            "category": category,
+            "workflow_status": "Requested",
             "international_type": interest_data.get("international_type"),
             "international_country": interest_data.get("international_country"),
             "international_details": interest_data.get("international_details"),
-            "unit_interest_status": "Active",
-        }))
+        })
 
-    doc.is_primary_buyer = int(any(
-        row.get("interest_category") == "Primary"
-        and row.get("unit_interest_status") != "Lost Interest"
-        for row in (doc.get("interested_in_units") or [])
-    ))
+    existing_primary = (
+        frappe.db.exists(
+            "Lead Interest",
+            {"lead": doc.name, "category": "Primary", "is_active": 1},
+        )
+        if _standalone_interests_available()
+        else None
+    )
+    doc.is_primary_buyer = int(category == "Primary" or bool(existing_primary))
 
     creates_request = requested_unit or category in ("Brokerage Request", "International")
     if apply_status and creates_request and doc.status in (LEAD_STATUS_NEW, LEAD_STATUS_FRESH, LEAD_STATUS_OFFER_SENT):
         doc.previous_status = doc.status
         _set_lead_status(doc, LEAD_STATUS_REQUESTED, _("Interest request recorded: {0}").format(category))
 
-    return {"category": category, "requested_unit": requested_unit, "rows": added_rows}
+    return {
+        "category": category,
+        "requested_unit": requested_unit,
+        "interest_values": interest_values,
+        "existing_interest_names": existing_interest_names,
+    }
 
 
 def _promote_applied_interest_rows(lead_doc, applied_interest):
-    """Dual-write newly saved child rows and return standalone Lead Interest names."""
+    """Create authoritative standalone Interests and return their names."""
     if not applied_interest or not _standalone_interests_available():
-        return [row.name for row in (applied_interest or {}).get("rows", []) if row.name]
-    promoted = []
-    for row in applied_interest.get("rows") or []:
-        if not row.name:
-            continue
-        interest = _ensure_standalone_interest(lead_doc, row, update_existing=True)
+        return []
+    promoted = list(dict.fromkeys(applied_interest.get("existing_interest_names") or []))
+    for values in applied_interest.get("interest_values") or []:
+        interest = _create_standalone_interest(
+            lead_doc,
+            values,
+            reason=_("Created from Lead workflow"),
+        )
         if interest and interest.name not in promoted:
             promoted.append(interest.name)
     _reconcile_standalone_rollup(lead_doc.name, _("Interest records added"))
@@ -874,14 +898,8 @@ def create_resale_unit(
 def add_interest_request(lead, request_notes, request_status="Open"):
     doc = _get_lead_doc(lead)
     _validate_buyer_lead(doc)
-    row = doc.append("interested_in_units", {
-        "doctype": "Lead Interested Unit",
-        "interest_record_type": "Request",
-        "interest_category": "Brokerage Request",
-        "request_notes": request_notes,
-        "request_status": request_status or "Open",
-        "unit_interest_status": "Active",
-    })
+    if not str(request_notes or "").strip():
+        frappe.throw(_("Brokerage requirements are mandatory."))
     doc.interest_status = "Interested"
     if doc.status in (LEAD_STATUS_NEW, LEAD_STATUS_FRESH):
         doc.previous_status = doc.status
@@ -889,7 +907,19 @@ def add_interest_request(lead, request_notes, request_status="Open"):
     _save_workflow_doc(doc)
     promoted = _promote_applied_interest_rows(
         doc,
-        {"category": "Brokerage Request", "requested_unit": True, "rows": [row]},
+        {
+            "category": "Brokerage Request",
+            "requested_unit": True,
+            "interest_values": [
+                {
+                    "record_type": "Request",
+                    "category": "Brokerage Request",
+                    "workflow_status": "Requested",
+                    "request_notes": request_notes,
+                    "request_status": "Open",
+                }
+            ],
+        },
     )
     doc.reload()
     result = doc.as_dict()
@@ -904,40 +934,13 @@ def link_interested_units(lead, units, interest_category="Resale"):
     if isinstance(units, str):
         units = json.loads(units)
     units = list(dict.fromkeys(filter(None, units or [])))
-    _validate_inventory_interest(interest_category, units)
-    existing_rows = {
-        (row.unit, row.get("interest_category")): row
-        for row in doc.get("interested_in_units") or []
-        if row.unit
-    }
-    added = 0
-    scoped_rows = []
-    for unit in units:
-        if not unit:
-            continue
-        existing_row = existing_rows.get((unit, interest_category))
-        if existing_row:
-            scoped_rows.append(existing_row)
-            continue
-        if not frappe.db.exists("Real Estate Unit", unit):
-            continue
-        row = doc.append("interested_in_units", {
-            "doctype": "Lead Interested Unit",
-            "interest_record_type": "Inventory Unit",
-            "interest_category": interest_category,
-            "unit": unit,
-            "unit_interest_status": "Active",
-            "proposal_status": "Pending",
-        })
-        existing_rows[(unit, interest_category)] = row
-        scoped_rows.append(row)
-        added += 1
-    if added:
-        doc.save(ignore_permissions=True)
-    promoted = _promote_applied_interest_rows(
+    applied = _apply_interest_payload(
         doc,
-        {"category": interest_category, "requested_unit": False, "rows": scoped_rows},
-    ) if scoped_rows else []
+        {"interest_category": interest_category, "units": units},
+        apply_status=False,
+    )
+    _save_workflow_doc(doc)
+    promoted = _promote_applied_interest_rows(doc, applied)
     if promoted:
         doc.reload()
     result = doc.as_dict()
@@ -979,11 +982,18 @@ def assign_property_unit_to_seller(lead, unit):
 @frappe.whitelist()
 def get_lead_linked_units(lead):
     lead_doc = _get_lead_doc(lead)
-    interest_table_rows = lead_doc.get("interested_in_units") or []
+    use_standalone = _standalone_interests_available()
+    interest_table_rows = (
+        _get_standalone_interests(lead, include_closed=True)
+        if use_standalone
+        else (lead_doc.get("interested_in_units") or [])
+    )
     interested_rows = [row for row in interest_table_rows if row.unit]
     non_unit_rows = [row for row in interest_table_rows if not row.unit]
     interested_units = [row.unit for row in interested_rows]
-    interest_by_unit = {row.unit: row for row in interested_rows}
+    interest_by_unit = {}
+    for interest_row in interested_rows:
+        interest_by_unit.setdefault(interest_row.unit, interest_row)
     names = set(interested_units)
     owner_rows = frappe.get_all("Real Estate Unit", filters={"owner_lead": lead}, pluck="name")
     names.update(owner_rows)
@@ -1001,9 +1011,21 @@ def get_lead_linked_units(lead):
         interest_row = interest_by_unit.get(row.name)
         row.interest_record_type = "Inventory Unit"
         row.interest_row_name = interest_row.name if interest_row else None
-        row.interest_category = interest_row.get("interest_category") if interest_row else None
-        row.unit_interest_status = interest_row.get("unit_interest_status") if interest_row else None
-        row.offer_sent = interest_row.get("offer_sent") if interest_row else 0
+        row.interest_category = (
+            interest_row.get("category") if use_standalone else interest_row.get("interest_category")
+        ) if interest_row else None
+        workflow_status = interest_row.get("workflow_status") if interest_row and use_standalone else None
+        row.unit_interest_status = (
+            "Lost Interest" if workflow_status in {"Rejected", "Superseded", "Cancelled"} else "Active"
+        ) if interest_row and use_standalone else (
+            interest_row.get("unit_interest_status") if interest_row else None
+        )
+        row.offer_sent = int(workflow_status in {
+            "Offer Sent", "Offer Viewed", "Offer Accepted", "Negotiating",
+            "Showing Scheduled", "Shown - Interested", "Shown - Considering",
+        }) if interest_row and use_standalone else (
+            interest_row.get("offer_sent") if interest_row else 0
+        )
         row.offer_sent_at = interest_row.get("offer_sent_at") if interest_row else None
         row.deletion_request_status = interest_row.get("deletion_request_status") if interest_row else None
         row.deletion_request = interest_row.get("deletion_request") if interest_row else None
@@ -1013,11 +1035,30 @@ def get_lead_linked_units(lead):
             row.relationship = _("Seller Unit")
         else:
             row.relationship = _("Interested Unit")
-        row.proposal_status = interest_row.get("proposal_status") if interest_row else None
+        row.proposal_status = (
+            {
+                "Matched": "Pending",
+                "Offer Sent": "Sent",
+                "Offer Viewed": "Viewed",
+                "Offer Accepted": "Offer Accepted",
+                "Negotiating": "Offer Accepted",
+                "Showing Scheduled": "Offer Accepted",
+                "Shown - Interested": "Offer Accepted",
+                "Shown - Considering": "Offer Accepted",
+                "Rejected": "Rejected",
+                "Superseded": "Rejected",
+            }.get(workflow_status)
+            if interest_row and use_standalone
+            else (interest_row.get("proposal_status") if interest_row else None)
+        )
 
     for index, interest_row in enumerate(non_unit_rows, start=1):
-        record_type = interest_row.get("interest_record_type") or "Request"
-        category = interest_row.get("interest_category") or (
+        record_type = (
+            interest_row.get("record_type") if use_standalone else interest_row.get("interest_record_type")
+        ) or "Request"
+        category = (
+            interest_row.get("category") if use_standalone else interest_row.get("interest_category")
+        ) or (
             "International" if record_type == "International" else "Brokerage Request"
         )
         rows.append(frappe._dict({
@@ -1043,11 +1084,17 @@ def get_lead_linked_units(lead):
             "outsource_broker_name": interest_row.get("outsource_broker_name"),
             "outsource_broker_number": interest_row.get("outsource_broker_number"),
             "outsource_unit_details": interest_row.get("outsource_unit_details"),
-            "unit_interest_status": interest_row.get("unit_interest_status"),
+            "unit_interest_status": (
+                "Lost Interest"
+                if use_standalone and interest_row.get("workflow_status") in {"Rejected", "Superseded", "Fulfilled", "Cancelled"}
+                else "Active"
+                if use_standalone
+                else interest_row.get("unit_interest_status")
+            ),
             "deletion_request_status": interest_row.get("deletion_request_status"),
             "deletion_request": interest_row.get("deletion_request"),
             "relationship": _("Interest Request"),
-            "proposal_status": interest_row.get("proposal_status"),
+            "proposal_status": interest_row.get("proposal_status") if not use_standalone else None,
             "owner_lead": None,
             "modified": interest_row.modified,
         }))
@@ -1719,27 +1766,28 @@ def mark_lead_negotiating(lead, unit=None):
 # ---------------------------------------------------------------------------
 @frappe.whitelist()
 def add_outsource_interest(lead, company_name, broker_name=None, broker_number=None, unit_details=None):
-    """Add an outsource unit to the interest table (unit from external broker/developer)."""
+    """Add an authoritative standalone outsource Interest."""
     doc = _get_lead_doc(lead)
     _validate_buyer_lead(doc)
-
-    row = doc.append("interested_in_units", {
-        "doctype": "Lead Interested Unit",
-        "interest_record_type": "Outsource",
-        "interest_category": "Outsource",
-        "source_type": "Outsource",
-        "outsource_company": company_name,
-        "outsource_broker_name": broker_name,
-        "outsource_broker_number": broker_number,
-        "outsource_unit_details": unit_details,
-        "unit_interest_status": "Active",
-    })
+    if not str(company_name or "").strip():
+        frappe.throw(_("Outsource company name is mandatory."))
     _add_lead_comment(doc, _("Outsource unit added from {0}").format(company_name))
     doc.save(ignore_permissions=True)
-    standalone = _ensure_standalone_interest(doc, row, update_existing=True) if _standalone_interests_available() else None
-    if standalone:
-        _reconcile_standalone_rollup(lead, _("Outsource interest added"))
-    return {"added": True, "company": company_name, "interest": standalone.name if standalone else row.name}
+    standalone = _create_standalone_interest(
+        doc,
+        {
+            "record_type": "Outsource",
+            "category": "Outsource",
+            "workflow_status": "Matched",
+            "outsource_company": company_name,
+            "outsource_broker_name": broker_name,
+            "outsource_broker_number": broker_number,
+            "outsource_unit_details": unit_details,
+        },
+        reason=_("Outsource Interest added"),
+    )
+    _reconcile_standalone_rollup(lead, _("Outsource interest added"))
+    return {"added": True, "company": company_name, "interest": standalone.name}
 
 
 # ---------------------------------------------------------------------------
@@ -1777,7 +1825,6 @@ def update_interest_record(lead, row_name, interest_data):
     """Edit one existing interest row without mutating unrelated interests."""
     doc = _get_lead_doc(lead)
     _validate_buyer_lead(doc)
-    row = _find_interest_row(doc, row_name)
     standalone_existing = (
         _get_standalone_interest(lead, row_name)
         if _standalone_interests_available()
@@ -1791,6 +1838,99 @@ def update_interest_record(lead, row_name, interest_data):
     if isinstance(interest_data, str):
         interest_data = json.loads(interest_data)
     interest_data = interest_data or {}
+
+    if standalone_existing:
+        category = interest_data.get("interest_category") or standalone_existing.category
+        if category != standalone_existing.category:
+            frappe.throw(
+                _("An existing Interest category cannot be changed. Supersede it and create a new Interest instead."),
+                frappe.PermissionError,
+            )
+        if category in ("Resale", "Primary"):
+            requested_destination = (
+                interest_data.get("preferred_destination")
+                or standalone_existing.get("requested_destination")
+            )
+            requested_area = (
+                interest_data.get("preferred_area")
+                or standalone_existing.get("requested_area")
+            )
+            if not requested_destination and requested_area:
+                requested_destination = _resolve_destination_alias(location=requested_area)
+            _validate_active_destination(requested_destination)
+            requested_type = (
+                interest_data.get("preferred_unit_type")
+                or standalone_existing.get("requested_unit_type")
+            )
+            requested_budget = (
+                interest_data.get("buyer_budget")
+                or standalone_existing.get("requested_budget")
+            )
+            if not requested_destination or not requested_type or not requested_budget:
+                frappe.throw(_("Requested destination, unit type, and budget are mandatory."))
+            standalone_existing.request_status = "Open"
+            standalone_existing.requested_destination = requested_destination
+            standalone_existing.requested_area = requested_area
+            standalone_existing.requested_unit_type = requested_type
+            standalone_existing.requested_budget = requested_budget
+            standalone_existing.requested_project = (
+                interest_data.get("preferred_compound")
+                or standalone_existing.get("requested_project")
+            )
+            standalone_existing.requested_developer = (
+                interest_data.get("preferred_developer")
+                or standalone_existing.get("requested_developer")
+            )
+            standalone_existing.requested_finishing_type = (
+                interest_data.get("preferred_finishing_type")
+                or standalone_existing.get("requested_finishing_type")
+            )
+            standalone_existing.requested_delivery_time = (
+                interest_data.get("preferred_delivery_time")
+                or standalone_existing.get("requested_delivery_time")
+            )
+        elif category == "Brokerage Request":
+            notes = interest_data.get("request_notes")
+            if not notes:
+                frappe.throw(_("Brokerage requirements are mandatory."))
+            standalone_existing.request_notes = notes
+            standalone_existing.request_status = "Open"
+        elif category == "International":
+            international_type = interest_data.get("international_type")
+            country = interest_data.get("international_country")
+            if not international_type or not country:
+                frappe.throw(_("International category and country are mandatory."))
+            standalone_existing.international_type = international_type
+            standalone_existing.international_country = country
+            standalone_existing.international_details = interest_data.get("international_details")
+        else:
+            frappe.throw(_("This Interest type cannot be edited through the request editor."))
+
+        for field in (
+            "preferred_destination",
+            "preferred_area",
+            "preferred_unit_type",
+            "preferred_developer",
+            "preferred_compound",
+            "preferred_finishing_type",
+            "preferred_delivery_time",
+            "buyer_budget",
+        ):
+            if field in interest_data:
+                doc.set(field, interest_data.get(field))
+        _add_lead_comment(doc, _("Interest record updated: {0}").format(row_name))
+        doc.save(ignore_permissions=True)
+        standalone_existing.save(ignore_permissions=True)
+        _mirror_standalone_interest(standalone_existing)
+        _reconcile_standalone_rollup(doc.name, _("Interest details updated"))
+        standalone_existing.reload()
+        return {
+            "updated": True,
+            "row": standalone_existing.as_dict(),
+            "interest": standalone_existing.name,
+        }
+
+    row = _find_interest_row(doc, row_name)
 
     category = interest_data.get("interest_category") or row.get("interest_category")
     if category not in ("Resale", "Primary", "Brokerage Request", "International", "Outsource"):
@@ -1900,13 +2040,10 @@ def update_interest_record(lead, row_name, interest_data):
     ))
     _add_lead_comment(doc, _("Interest record updated: {0}").format(row_name))
     doc.save(ignore_permissions=True)
-    standalone = _ensure_standalone_interest(doc, row, update_existing=True) if _standalone_interests_available() else None
-    if standalone:
-        _reconcile_standalone_rollup(doc.name, _("Interest details updated"))
     return {
         "updated": True,
         "row": row.as_dict(),
-        "interest": standalone.name if standalone else row.name,
+        "interest": row.name,
     }
 
 
@@ -1917,9 +2054,15 @@ def request_interest_deletion(lead, row_name, reason):
         frappe.throw(_("Deletion reason is mandatory."))
     doc = _get_lead_doc(lead)
     _validate_buyer_lead(doc)
-    row = _find_interest_row(doc, row_name)
-    if row.get("deletion_request_status") == "Pending Manager Approval":
-        return {"requested": True, "request": row.get("deletion_request")}
+    standalone = (
+        _get_standalone_interest(lead, row_name)
+        if _standalone_interests_available()
+        else None
+    )
+    row = None if standalone else _find_interest_row(doc, row_name)
+    source = standalone or row
+    if source.get("deletion_request_status") == "Pending Manager Approval":
+        return {"requested": True, "request": source.get("deletion_request")}
 
     managers = frappe.get_all(
         "Has Role",
@@ -1942,15 +2085,13 @@ def request_interest_deletion(lead, row_name, reason):
     })
     task.insert(ignore_permissions=True)
 
-    row.deletion_request_status = "Pending Manager Approval"
-    row.deletion_request = task.name
+    source.deletion_request_status = "Pending Manager Approval"
+    source.deletion_request = task.name
     _add_lead_comment(doc, _("Interest deletion requested for manager approval: {0}").format(row_name))
     doc.save(ignore_permissions=True)
-    standalone = _ensure_standalone_interest(doc, row, update_existing=True) if _standalone_interests_available() else None
     if standalone:
-        standalone.deletion_request_status = "Pending Manager Approval"
-        standalone.deletion_request = task.name
         standalone.save(ignore_permissions=True)
+        _mirror_standalone_interest(standalone)
     return {
         "requested": True,
         "request": task.name,
@@ -1968,14 +2109,40 @@ def review_interest_deletion(lead, row_name, decision, request_name=None, note=N
         frappe.throw(_("Decision must be Approve or Reject."))
 
     doc = _get_lead_doc(lead)
-    row = _find_interest_row(doc, row_name)
-    linked_request = request_name or row.get("deletion_request")
-    if row.get("deletion_request_status") != "Pending Manager Approval":
+    standalone = (
+        _get_standalone_interest(lead, row_name)
+        if _standalone_interests_available()
+        else None
+    )
+    row = None if standalone else _find_interest_row(doc, row_name)
+    source = standalone or row
+    linked_request = source.get("deletion_request")
+    if request_name and request_name != linked_request:
+        frappe.throw(
+            _("The supplied approval task does not match this Interest."),
+            frappe.PermissionError,
+        )
+    if source.get("deletion_request_status") != "Pending Manager Approval":
         frappe.throw(_("This interest record has no pending deletion request."))
+    if linked_request:
+        todo_reference = frappe.db.get_value(
+            "ToDo",
+            linked_request,
+            ["reference_type", "reference_name"],
+            as_dict=True,
+        )
+        if (
+            not todo_reference
+            or todo_reference.reference_type != "CRM Lead"
+            or todo_reference.reference_name != lead
+        ):
+            frappe.throw(
+                _("The stored deletion approval task is not linked to this Lead."),
+                frappe.PermissionError,
+            )
 
-    standalone = _ensure_standalone_interest(doc, row, update_existing=True) if _standalone_interests_available() else None
     if decision == "Approve":
-        legacy_row_name = row.name
+        legacy_row_name = standalone.legacy_child_row if standalone else row.name
         if standalone:
             _transition_standalone_interest(
                 standalone.name,
@@ -1983,8 +2150,13 @@ def review_interest_deletion(lead, row_name, decision, request_name=None, note=N
                 outcome="Deletion Approved",
                 reason=note or _("Manager-approved interest removal"),
                 force=True,
+                mirror_legacy=False,
             )
-        doc.set("interested_in_units", [r for r in doc.get("interested_in_units") or [] if r.name != legacy_row_name])
+        if legacy_row_name:
+            doc.set(
+                "interested_in_units",
+                [r for r in doc.get("interested_in_units") or [] if r.name != legacy_row_name],
+            )
         _add_lead_comment(doc, _("Interest deletion approved by {0}: {1}. {2}").format(
             frappe.session.user, row_name, note or ""
         ))
@@ -1992,14 +2164,14 @@ def review_interest_deletion(lead, row_name, decision, request_name=None, note=N
         if standalone:
             _reconcile_standalone_rollup(lead, _("Interest deletion approved"))
     else:
-        row.deletion_request_status = "Rejected"
+        source.deletion_request_status = "Rejected"
         _add_lead_comment(doc, _("Interest deletion rejected by {0}: {1}. {2}").format(
             frappe.session.user, row_name, note or ""
         ))
         doc.save(ignore_permissions=True)
         if standalone:
-            standalone.deletion_request_status = "Rejected"
             standalone.save(ignore_permissions=True)
+            _mirror_standalone_interest(standalone)
 
     if linked_request and frappe.db.exists("ToDo", linked_request):
         frappe.db.set_value("ToDo", linked_request, "status", "Closed")

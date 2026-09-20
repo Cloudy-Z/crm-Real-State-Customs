@@ -306,7 +306,6 @@ def sync_real_estate_crm_defaults():
     setup_real_estate_client_scripts()
     setup_crm_portal_defaults()
     migrate_standalone_lead_interests()
-    frappe.db.commit()
 
 
 def migrate_standalone_lead_interests():
@@ -457,7 +456,6 @@ def enforce_crm_lead_phone_mandatory():
             AND field_name IN ('phone', 'mobile_no')
             AND property IN ('reqd', 'hidden', 'unique', 'length')
         """)
-        frappe.db.commit()
 
     # Drop unique index if it exists (Phone fieldtype cannot be unique)
     try:
@@ -536,7 +534,6 @@ def make_property_setter(doc_type, field_name, property_name, value, property_ty
     doc.value = value
     doc.property_type = property_type
     doc.save(ignore_permissions=True)
-    frappe.db.commit()
 
 
 def setup_real_estate_client_scripts():
@@ -1024,7 +1021,7 @@ def ensure_real_estate_quick_filters():
         if not frappe.db.exists("DocType", doctype):
             continue
 
-        filters = {"dt": doctype}
+        filters = {"dt": doctype, "type": "Quick Filters"}
         if frappe.db.exists("CRM Global Settings", filters):
             doc = frappe.get_doc("CRM Global Settings", filters)
             existing_fields = frappe.parse_json(doc.json) if doc.json else []
@@ -1034,5 +1031,6 @@ def ensure_real_estate_quick_filters():
         else:
             doc = frappe.new_doc("CRM Global Settings")
             doc.dt = doctype
+            doc.type = "Quick Filters"
             doc.json = json.dumps(fields)
             doc.insert(ignore_permissions=True)

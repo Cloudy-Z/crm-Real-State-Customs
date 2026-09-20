@@ -10,6 +10,25 @@ DOCTYPE_ROOT = ROOT / "real_estate_crm_customs" / "real_estate_crm_customs" / "d
 FIXTURE = ROOT / "real_estate_crm_customs" / "fixtures" / "custom_field.json"
 HOOKS = ROOT / "real_estate_crm_customs" / "hooks.py"
 INSTALL = ROOT / "real_estate_crm_customs" / "install.py"
+API = ROOT / "real_estate_crm_customs" / "api.py"
+INTEREST_WORKFLOW = ROOT / "real_estate_crm_customs" / "interest_workflow.py"
+LEAD_INTEREST_CONTROLLER = (
+    DOCTYPE_ROOT / "lead_interest" / "lead_interest.py"
+)
+UNIFICATION_PATCH = (
+    ROOT
+    / "real_estate_crm_customs"
+    / "patches"
+    / "v16_0"
+    / "unify_real_estate_fields.py"
+)
+LEGACY_PATCH = (
+    ROOT
+    / "real_estate_crm_customs"
+    / "patches"
+    / "v0_0_1"
+    / "setup_crm_lead_customizations.py"
+)
 
 
 def load_doctype(folder):
@@ -27,6 +46,57 @@ def literal_assignment(path, name):
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_custom_field_insert_after_graph_is_acyclic(self):
+        records = json.loads(FIXTURE.read_text())
+        for doctype in {record.get("dt") for record in records}:
+            fields = {
+                record["fieldname"]: record
+                for record in records
+                if record.get("dt") == doctype
+            }
+            for start in fields:
+                seen = set()
+                current = start
+                while current in fields:
+                    self.assertNotIn(
+                        current,
+                        seen,
+                        f"Circular insert_after chain in {doctype}: {start}",
+                    )
+                    seen.add(current)
+                    current = fields[current].get("insert_after")
+
+    def test_install_hooks_do_not_commit_or_create_untyped_quick_filters(self):
+        source = INSTALL.read_text()
+        self.assertNotIn("frappe.db.commit()", source)
+        self.assertIn('{"dt": doctype, "type": "Quick Filters"}', source)
+        self.assertIn('doc.type = "Quick Filters"', source)
+
+    def test_pre_model_patch_does_not_run_schema_dependent_installer(self):
+        source = LEGACY_PATCH.read_text()
+        self.assertNotIn("after_install", source)
+        self.assertNotIn("sync_real_estate_crm_defaults", source)
+
+    def test_post_model_patch_does_not_assume_fixture_column_or_clear_owners(self):
+        source = UNIFICATION_PATCH.read_text()
+        self.assertIn('frappe.db.has_column("CRM Lead", "party_type")', source)
+        self.assertNotIn('values["owner_lead"] = None', source)
+
+    def test_interest_api_is_standalone_first(self):
+        source = API.read_text()
+        self.assertNotIn('doc.append("interested_in_units"', source)
+        self.assertIn("create_interest as _create_standalone_interest", source)
+
+    def test_fact_migration_preserves_legacy_source_rows(self):
+        source = INTEREST_WORKFLOW.read_text()
+        self.assertGreaterEqual(source.count("mirror_legacy=False"), 2)
+
+    def test_superseded_requests_are_closed_consistently(self):
+        workflow_source = INTEREST_WORKFLOW.read_text()
+        controller_source = LEAD_INTEREST_CONTROLLER.read_text()
+        self.assertIn('elif to_status in {"Cancelled", "Superseded"}', workflow_source)
+        self.assertIn('"Superseded": "Cancelled"', controller_source)
+
     def test_all_link_filters_use_frappe_v16_four_value_rows(self):
         records = json.loads(FIXTURE.read_text())
         for schema_path in DOCTYPE_ROOT.glob("*/*.json"):
@@ -134,6 +204,7 @@ class SchemaContractTests(unittest.TestCase):
         self.assertEqual(lead_fields["party_type"]["options"].splitlines(), ["Buyer", "Seller"])
         self.assertEqual(lead_fields["preferred_destination"]["options"], "Real Estate Destination")
         self.assertEqual(lead_fields["preferred_unit_type"]["options"], "Real Estate Unit Type")
+        self.assertEqual(lead_fields["interested_in_units"].get("read_only"), 1)
         stale = {
             "custom_type",
             "lead_type",

@@ -20,15 +20,20 @@ LEGACY_UNIT_TYPE_ABBREVIATIONS = {
 INVENTORY_TYPES = {"Rental", "Resale", "Primary", "International"}
 AREA_FIELDS = ("bua", "land_area", "garden_area", "roof_area", "terrace_area")
 COUNT_FIELDS = ("bedrooms", "bathrooms", "number_of_floors")
+FINANCIAL_INPUT_FIELDS = ("paid", "over_price", "remaining", "over_is_gross")
 
 
 class RealEstateUnit(Document):
     def before_validate(self):
         set_dynamic_defaults(self)
-        set_parent_projections(self)
-        mirror_legacy_unit_type(self)
-        set_delivery_status(self)
-        set_financial_values(self)
+        if self.is_new() or self.has_value_changed("project"):
+            set_parent_projections(self)
+        if self.is_new() or self.has_value_changed("physical_unit_type"):
+            mirror_legacy_unit_type(self)
+        if self.is_new() or self.has_value_changed("delivery_date"):
+            set_delivery_status(self)
+        if self.is_new() or any(self.has_value_changed(fieldname) for fieldname in FINANCIAL_INPUT_FIELDS):
+            set_financial_values(self)
 
     def before_insert(self):
         set_dynamic_defaults(self)
@@ -99,12 +104,27 @@ def set_financial_values(doc):
 
 def validate_unit(doc):
     validate_new_unit_completeness(doc)
-    validate_inventory_type(doc)
-    validate_owner_lead(doc)
-    validate_unit_number(doc)
-    validate_physical_unit_type(doc)
-    validate_non_negative_details(doc)
-    validate_rental_rates(doc)
+    if doc.is_new() or _changed(doc, "inventory_type", "paid"):
+        validate_inventory_type(doc)
+    if doc.is_new() or _changed(doc, "inventory_type", "owner_lead"):
+        validate_owner_lead(doc)
+    if doc.is_new() or _changed(doc, "project", "unit_number"):
+        validate_unit_number(doc)
+    if doc.is_new() or _changed(doc, "project", "physical_unit_type"):
+        validate_physical_unit_type(doc)
+    if doc.is_new() or _changed(doc, *(AREA_FIELDS + COUNT_FIELDS + ("maintenance",))):
+        validate_non_negative_details(doc)
+    if doc.is_new() or _changed(
+        doc,
+        "inventory_type",
+        "rental_monthly_rate",
+        "rental_daily_rate",
+    ):
+        validate_rental_rates(doc)
+
+
+def _changed(doc, *fieldnames):
+    return any(doc.has_value_changed(fieldname) for fieldname in fieldnames)
 
 
 def validate_new_unit_completeness(doc):
@@ -133,6 +153,8 @@ def validate_inventory_type(doc):
 def validate_owner_lead(doc):
     if doc.inventory_type == "Resale" and not doc.owner_lead:
         frappe.throw(_("A Resale unit requires a Seller Owner."), frappe.ValidationError)
+    if doc.inventory_type == "Primary" and doc.owner_lead:
+        frappe.throw(_("A Primary unit cannot have a Seller Owner."), frappe.ValidationError)
     if not doc.owner_lead:
         return
     party_type = frappe.db.get_value("CRM Lead", doc.owner_lead, "party_type")

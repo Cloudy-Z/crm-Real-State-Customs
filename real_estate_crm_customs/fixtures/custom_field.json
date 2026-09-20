@@ -220,7 +220,7 @@
   "label": "Last Call Outcome",
   "fieldtype": "Select",
   "options": "\nAnswered\nNo Answer\nWrong Number\nInvalid / Disconnected",
-  "insert_after": "no_answer_total_count",
+  "insert_after": "workflow_origin_status",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "read_only": 1,
   "name": "CRM Lead-last_call_outcome"
@@ -231,7 +231,7 @@
   "fieldname": "last_call_at",
   "label": "Last Call At",
   "fieldtype": "Datetime",
-  "insert_after": "last_call_outcome",
+  "insert_after": "no_answer_total_count",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "read_only": 1,
   "name": "CRM Lead-last_call_at"
@@ -245,6 +245,7 @@
   "options": "Lead Interested Unit",
   "insert_after": "last_call_at",
   "depends_on": "eval:doc.party_type == 'Buyer'",
+  "read_only": 1,
   "name": "CRM Lead-interested_in_units"
  },
  {

@@ -117,6 +117,7 @@ def migrate_compound_destinations():
 def migrate_unit_fields(destinations):
     if not frappe.db.exists("DocType", "Real Estate Unit"):
         return
+    has_party_type = frappe.db.has_column("CRM Lead", "party_type")
     fields = [
         "name",
         "project",
@@ -148,16 +149,26 @@ def migrate_unit_fields(destinations):
         legacy_type = _normalize(unit.unit_type)
         if not unit.physical_unit_type and legacy_type:
             values["physical_unit_type"] = ensure_legacy_unit_type(legacy_type)
-        owner_role = frappe.db.get_value("CRM Lead", unit.owner_lead, "party_type") if unit.owner_lead else None
+        owner_role = (
+            frappe.db.get_value("CRM Lead", unit.owner_lead, "party_type")
+            if unit.owner_lead and has_party_type
+            else None
+        )
         if not unit.inventory_type:
-            values["inventory_type"] = "Resale" if owner_role == "Seller" else "Primary"
-        if unit.owner_lead:
-            if owner_role != "Seller":
+            if owner_role == "Seller":
+                values["inventory_type"] = "Resale"
+            elif not unit.owner_lead:
+                values["inventory_type"] = "Primary"
+            else:
                 _log_issue(
-                    "Invalid Real Estate Unit owner",
-                    f"{unit.name}: cleared owner_lead={unit.owner_lead!r}; party_type={owner_role!r}; existing inventory classification preserved",
+                    "Unresolved Real Estate Unit classification",
+                    f"{unit.name}: owner_lead={unit.owner_lead!r}; party_type is unavailable before fixture sync",
                 )
-                values["owner_lead"] = None
+        if unit.owner_lead and has_party_type and owner_role != "Seller":
+            _log_issue(
+                "Invalid Real Estate Unit owner",
+                f"{unit.name}: preserved owner_lead={unit.owner_lead!r}; party_type={owner_role!r}; manual review required",
+            )
         if values:
             frappe.db.set_value("Real Estate Unit", unit.name, values, update_modified=False)
 

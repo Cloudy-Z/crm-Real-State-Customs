@@ -10,6 +10,12 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime
 
+from real_estate_crm_customs.migration_policy import (
+    LegacyInterestDataError,
+    normalize_legacy_interest_binding,
+    parse_legacy_scope_identifiers,
+)
+
 
 LEAD_STATUS_NEW = "New"
 LEAD_STATUS_FRESH = "Fresh Lead"
@@ -130,23 +136,33 @@ def derive_legacy_status(row):
 
 
 def _origin_status(lead_doc):
-    if lead_doc.get("workflow_origin_status") in (LEAD_STATUS_NEW, LEAD_STATUS_FRESH):
-        return lead_doc.get("workflow_origin_status")
-    if lead_doc.get("status") in (LEAD_STATUS_NEW, LEAD_STATUS_FRESH):
-        return lead_doc.get("status")
-    if lead_doc.get("previous_status") in (LEAD_STATUS_NEW, LEAD_STATUS_FRESH):
-        return lead_doc.get("previous_status")
-    return LEAD_STATUS_NEW
+    for fieldname in ("workflow_origin_status", "previous_status"):
+        value = lead_doc.get(fieldname)
+        if value in (LEAD_STATUS_NEW, LEAD_STATUS_FRESH):
+            return value
+    return lead_doc.get("status") or LEAD_STATUS_NEW
 
 
 def _legacy_interest_values(lead_doc, row):
+    unit = row.get("unit")
+    unit_inventory_type = (
+        frappe.db.get_value("Real Estate Unit", unit, "inventory_type")
+        if unit and frappe.db.exists("Real Estate Unit", unit)
+        else None
+    )
+    binding = normalize_legacy_interest_binding(
+        record_type=row.get("interest_record_type"),
+        category=row.get("interest_category"),
+        unit=unit,
+        unit_inventory_type=unit_inventory_type,
+    )
     values = {
         "doctype": "Lead Interest",
         "lead": lead_doc.name,
-        "record_type": row.get("interest_record_type") or ("Inventory Unit" if row.get("unit") else "Request"),
-        "category": row.get("interest_category") or "Resale",
+        "record_type": binding["record_type"],
+        "category": binding["category"],
         "workflow_status": derive_legacy_status(row),
-        "unit": row.get("unit"),
+        "unit": unit,
         "origin_lead_status": _origin_status(lead_doc),
         "offer_sent_at": row.get("offer_sent_at"),
         "legacy_child_row": row.name,
@@ -187,26 +203,182 @@ def ensure_interest_for_legacy_row(lead_doc, row, update_existing=False):
     return interest
 
 
+def create_interest(lead_doc, values, reason="Standalone Lead Interest created"):
+    """Create the authoritative Interest first, then generate its legacy mirror."""
+    payload = dict(values or {})
+    payload.update({"doctype": "Lead Interest", "lead": lead_doc.name})
+    payload.setdefault("origin_lead_status", _origin_status(lead_doc))
+    payload.setdefault("workflow_status", "Matched")
+    payload.setdefault("is_active", 1)
+    payload.setdefault("last_transition_at", now_datetime())
+    payload.setdefault("last_transition_by", frappe.session.user)
+    interest = frappe.get_doc(payload)
+    interest.insert(ignore_permissions=True)
+    create_transition(
+        interest,
+        from_status=None,
+        to_status=interest.workflow_status,
+        reason=reason,
+        allow_same=True,
+    )
+    mirror_interest_to_legacy(interest)
+    return interest
+
+
+def _record_migration_issue(stage, source_doctype, source_name, exc):
+    issue = {
+        "stage": stage,
+        "source_doctype": source_doctype,
+        "source_name": source_name,
+        "error": str(exc),
+    }
+    message = (
+        f"Stage: {stage}\nSource: {source_doctype} {source_name}\n"
+        f"Error: {exc}\n\nThe source record was preserved and skipped."
+    )
+    try:
+        frappe.log_error(
+            title=f"Real-estate migration skipped {source_doctype}"[:140],
+            message=message,
+        )
+    except Exception:
+        print(message)
+    return issue
+
+
 def migrate_legacy_lead_interests():
     if not is_available() or not frappe.db.exists("DocType", "CRM Lead"):
-        return {"created": 0, "existing": 0}
+        return {"created": 0, "existing": 0, "skipped": 0, "issues": []}
     created = 0
     existing = 0
+    issues = []
     lead_names = frappe.get_all("CRM Lead", pluck="name", limit_page_length=0)
     for lead_name in lead_names:
         lead_doc = frappe.get_doc("CRM Lead", lead_name)
         if lead_doc.meta.has_field("workflow_origin_status") and not lead_doc.get("workflow_origin_status"):
+            frappe.db.set_value(
+                "CRM Lead",
+                lead_doc.name,
+                "workflow_origin_status",
+                _origin_status(lead_doc),
+                update_modified=False,
+            )
             lead_doc.workflow_origin_status = _origin_status(lead_doc)
-            lead_doc.flags.real_estate_status_transition = True
-            lead_doc.save(ignore_permissions=True)
-        for row in lead_doc.get("interested_in_units") or []:
-            existed = frappe.db.exists("Lead Interest", {"legacy_child_row": row.name})
-            ensure_interest_for_legacy_row(lead_doc, row, update_existing=False)
+        rows = lead_doc.get("interested_in_units") or []
+        if rows and lead_doc.get("party_type") != "Buyer":
+            for row in rows:
+                issues.append(
+                    _record_migration_issue(
+                        "interest promotion",
+                        "Lead Interested Unit",
+                        row.name,
+                        LegacyInterestDataError(
+                            f"Parent Lead {lead_doc.name} is not a canonical Buyer"
+                        ),
+                    )
+                )
+            continue
+        for index, row in enumerate(rows):
+            savepoint = f"legacy_interest_{index}"
+            frappe.db.savepoint(savepoint)
+            try:
+                existed = frappe.db.exists("Lead Interest", {"legacy_child_row": row.name})
+                ensure_interest_for_legacy_row(lead_doc, row, update_existing=False)
+            except Exception as exc:
+                frappe.db.rollback(save_point=savepoint)
+                issues.append(
+                    _record_migration_issue(
+                        "interest promotion",
+                        "Lead Interested Unit",
+                        row.name,
+                        exc,
+                    )
+                )
+                continue
+            finally:
+                try:
+                    frappe.db.release_savepoint(savepoint)
+                except Exception:
+                    pass
             if existed:
                 existing += 1
             else:
                 created += 1
-    return {"created": created, "existing": existing}
+    return {
+        "created": created,
+        "existing": existing,
+        "skipped": len(issues),
+        "issues": issues,
+    }
+
+
+def reconcile_existing_legacy_interest_bindings():
+    """Repair target-only bindings from canonical Units; never rewrite legacy sources."""
+    if not is_available():
+        return {"updated": 0, "skipped": 0, "normalized": [], "issues": []}
+    updated = 0
+    normalized = []
+    issues = []
+    rows = frappe.get_all(
+        "Lead Interest",
+        fields=["name", "record_type", "category", "unit", "legacy_child_row"],
+        limit_page_length=0,
+    )
+    for index, row in enumerate(rows):
+        if not row.legacy_child_row:
+            continue
+        if not row.unit:
+            continue
+        savepoint = f"binding_reconcile_{index}"
+        frappe.db.savepoint(savepoint)
+        try:
+            inventory_type = frappe.db.get_value("Real Estate Unit", row.unit, "inventory_type")
+            binding = normalize_legacy_interest_binding(
+                record_type=row.record_type,
+                category=row.category,
+                unit=row.unit,
+                unit_inventory_type=inventory_type,
+            )
+            changes = {}
+            if row.record_type != binding["record_type"]:
+                changes["record_type"] = binding["record_type"]
+            if row.category != binding["category"]:
+                changes["category"] = binding["category"]
+            if changes:
+                frappe.db.set_value("Lead Interest", row.name, changes, update_modified=False)
+        except Exception as exc:
+            frappe.db.rollback(save_point=savepoint)
+            issues.append(
+                _record_migration_issue(
+                    "interest binding reconciliation",
+                    "Lead Interest",
+                    row.name,
+                    exc,
+                )
+            )
+            continue
+        finally:
+            try:
+                frappe.db.release_savepoint(savepoint)
+            except Exception:
+                pass
+        if changes:
+            normalized.append(
+                {
+                    "lead_interest": row.name,
+                    "from_record_type": row.record_type,
+                    "to_record_type": changes.get("record_type", row.record_type),
+                    "from_category": row.category,
+                    "to_category": changes.get("category", row.category),
+                }
+            )
+            updated += 1
+    return {
+        "updated": updated,
+        "skipped": len(issues),
+        "normalized": normalized,
+        "issues": issues,
+    }
 
 
 def _legacy_to_interest_name(lead, identifier):
@@ -275,7 +447,15 @@ def create_transition(interest, from_status, to_status, action=None, outcome=Non
     return transition
 
 
-def transition_interest(identifier, to_status, action=None, outcome=None, reason=None, force=False):
+def transition_interest(
+    identifier,
+    to_status,
+    action=None,
+    outcome=None,
+    reason=None,
+    force=False,
+    mirror_legacy=True,
+):
     if to_status not in INTEREST_STATUSES:
         frappe.throw(_("Invalid Lead Interest status: {0}").format(to_status))
     interest = frappe.get_doc("Lead Interest", identifier)
@@ -302,18 +482,19 @@ def transition_interest(identifier, to_status, action=None, outcome=None, reason
     if interest.record_type == "Request":
         if to_status == "Fulfilled":
             interest.request_status = "Fulfilled"
-        elif to_status == "Cancelled":
+        elif to_status in {"Cancelled", "Superseded"}:
             interest.request_status = "Cancelled"
         elif to_status == "Requested":
             interest.request_status = "Open"
     interest.save(ignore_permissions=True)
     create_transition(interest, from_status, to_status, action=action, outcome=outcome, reason=reason)
-    mirror_interest_to_legacy(interest)
+    if mirror_legacy:
+        mirror_interest_to_legacy(interest)
     return interest
 
 
 def mirror_interest_to_legacy(interest):
-    if not interest.get("legacy_child_row") or not frappe.db.exists("CRM Lead", interest.lead):
+    if not frappe.db.exists("CRM Lead", interest.lead):
         return
     lead_doc = frappe.get_doc("CRM Lead", interest.lead)
     row = next(
@@ -321,7 +502,21 @@ def mirror_interest_to_legacy(interest):
         None,
     )
     if not row:
-        return
+        row = lead_doc.append(
+            "interested_in_units",
+            {
+                "doctype": "Lead Interested Unit",
+                "interest_record_type": interest.record_type,
+                "interest_category": interest.category,
+                "unit": interest.unit,
+            },
+        )
+    row.interest_record_type = interest.record_type
+    row.interest_category = interest.category
+    row.unit = interest.unit
+    for fieldname in LEGACY_COPY_FIELDS:
+        if row.meta.has_field(fieldname):
+            row.set(fieldname, interest.get(fieldname))
     status = interest.workflow_status
     row.unit_interest_status = "Lost Interest" if status in TERMINAL_INTEREST_STATUSES else "Active"
     row.offer_sent = int(status in {
@@ -350,6 +545,15 @@ def mirror_interest_to_legacy(interest):
         row.proposal_status = proposal_map[status]
     lead_doc.flags.real_estate_status_transition = True
     lead_doc.save(ignore_permissions=True)
+    if row.name and interest.get("legacy_child_row") != row.name:
+        frappe.db.set_value(
+            "Lead Interest",
+            interest.name,
+            "legacy_child_row",
+            row.name,
+            update_modified=False,
+        )
+        interest.legacy_child_row = row.name
 
 
 def append_action_scopes(action, identifiers, primary=None):
@@ -370,35 +574,78 @@ def append_action_scopes(action, identifiers, primary=None):
 
 
 def action_interest_names(action):
-    scoped = [row.lead_interest for row in (action.get("interest_scopes") or []) if row.lead_interest]
+    scope_rows = action.get("interest_scopes") or []
+    scoped = [row.lead_interest for row in scope_rows if row.lead_interest]
+    if scope_rows and len(scoped) != len(scope_rows):
+        frappe.throw(
+            _("Action {0} contains an incomplete Lead Interest scope.").format(action.name),
+            frappe.ValidationError,
+        )
     if scoped:
-        return list(dict.fromkeys(scoped))
+        return resolve_interest_names(action.lead, scoped, required=True)
     return resolve_interest_names(action.lead, action.get("interest_rows"))
 
 
 def migrate_action_interest_scopes():
     if not is_available() or not frappe.db.exists("DocType", "Lead Action Execution"):
-        return {"updated": 0, "skipped": 0}
+        return {"updated": 0, "skipped": 0, "issues": []}
     updated = 0
     skipped = 0
+    issues = []
     action_names = frappe.get_all("Lead Action Execution", pluck="name", limit_page_length=0)
-    for action_name in action_names:
+    for index, action_name in enumerate(action_names):
         action = frappe.get_doc("Lead Action Execution", action_name)
         if action.get("interest_scopes"):
+            try:
+                action_interest_names(action)
+            except Exception as exc:
+                issues.append(
+                    _record_migration_issue(
+                        "existing action scope validation",
+                        "Lead Action Execution",
+                        action_name,
+                        exc,
+                    )
+                )
             skipped += 1
             continue
-        identifiers = parse_names(action.get("interest_rows"))
-        if not identifiers and action.get("unit"):
-            candidate = frappe.db.get_value(
-                "Lead Interest",
-                {"lead": action.lead, "unit": action.unit, "is_active": 1},
-                "name",
+        savepoint = f"action_scope_{index}"
+        frappe.db.savepoint(savepoint)
+        try:
+            identifiers = parse_legacy_scope_identifiers(action.get("interest_rows"))
+            if not identifiers and action.get("unit"):
+                candidates = frappe.get_all(
+                    "Lead Interest",
+                    filters={"lead": action.lead, "unit": action.unit, "is_active": 1},
+                    pluck="name",
+                    limit_page_length=2,
+                )
+                if len(candidates) != 1:
+                    raise LegacyInterestDataError(
+                        f"Unit {action.unit} has {len(candidates)} active Interests; scope requires exactly one"
+                    )
+                identifiers = candidates
+            append_action_scopes(action, identifiers)
+            action.save(ignore_permissions=True)
+        except Exception as exc:
+            frappe.db.rollback(save_point=savepoint)
+            issues.append(
+                _record_migration_issue(
+                    "action scope promotion",
+                    "Lead Action Execution",
+                    action_name,
+                    exc,
+                )
             )
-            identifiers = [candidate] if candidate else []
-        append_action_scopes(action, identifiers)
-        action.save(ignore_permissions=True)
+            skipped += 1
+            continue
+        finally:
+            try:
+                frappe.db.release_savepoint(savepoint)
+            except Exception:
+                pass
         updated += 1
-    return {"updated": updated, "skipped": skipped}
+    return {"updated": updated, "skipped": skipped, "issues": issues}
 
 
 def open_action_for_interest(lead_interest, exclude_action=None):
@@ -456,6 +703,65 @@ def _rollup_target(interests, origin_status):
     return origin_status
 
 
+def _validate_rollup_interests(interests):
+    valid_categories = {
+        "Inventory Unit": {"Resale", "Primary"},
+        "Request": {"Resale", "Primary", "Brokerage Request"},
+        "Outsource": {"Outsource"},
+        "International": {"International"},
+    }
+    for interest in interests:
+        if interest.workflow_status not in INTEREST_STATUSES:
+            raise LegacyInterestDataError(
+                f"Lead Interest {interest.name} has invalid workflow status {interest.workflow_status!r}"
+            )
+        if interest.category not in valid_categories.get(interest.record_type, set()):
+            raise LegacyInterestDataError(
+                f"Lead Interest {interest.name} has invalid {interest.record_type}/{interest.category} binding"
+            )
+        if interest.record_type == "Inventory Unit":
+            if not interest.unit:
+                raise LegacyInterestDataError(
+                    f"Lead Interest {interest.name} has no linked Unit"
+                )
+            unit = frappe.db.get_value(
+                "Real Estate Unit",
+                interest.unit,
+                ["inventory_type", "owner_lead"],
+                as_dict=True,
+            )
+            if not unit or unit.inventory_type != interest.category:
+                raise LegacyInterestDataError(
+                    f"Lead Interest {interest.name} does not match its Unit inventory type"
+                )
+            if interest.category == "Resale":
+                owner_role = (
+                    frappe.db.get_value("CRM Lead", unit.owner_lead, "party_type")
+                    if unit.owner_lead
+                    else None
+                )
+                if owner_role != "Seller":
+                    raise LegacyInterestDataError(
+                        f"Lead Interest {interest.name} uses Resale inventory without a Seller owner"
+                    )
+            if interest.category == "Primary" and unit.owner_lead:
+                raise LegacyInterestDataError(
+                    f"Lead Interest {interest.name} uses seller-owned Primary inventory"
+                )
+        elif interest.unit:
+            raise LegacyInterestDataError(
+                f"Lead Interest {interest.name} links a Unit from non-inventory record type"
+            )
+        if (
+            interest.record_type == "Request"
+            and interest.category in {"Resale", "Primary"}
+            and not interest.requested_destination
+        ):
+            raise LegacyInterestDataError(
+                f"Lead Interest {interest.name} has no requested Destination"
+            )
+
+
 def reconcile_lead_rollup(lead, action_label="Interest workflow rollup"):
     if not is_available() or not frappe.db.exists("CRM Lead", lead):
         return None
@@ -463,6 +769,7 @@ def reconcile_lead_rollup(lead, action_label="Interest workflow rollup"):
     if lead_doc.get("party_type") == "Seller":
         return lead_doc.get("status")
     interests = get_interests(lead, include_closed=True)
+    _validate_rollup_interests(interests)
     target = _rollup_target(interests, _origin_status(lead_doc))
     if lead_doc.get("status") != target:
         from real_estate_crm_customs.api import _save_workflow_doc, _set_lead_status
@@ -474,8 +781,10 @@ def reconcile_lead_rollup(lead, action_label="Interest workflow rollup"):
 
 def migrate_open_showing_facts():
     if not is_available() or not frappe.db.exists("DocType", "Lead Action Execution"):
-        return 0
+        return {"changed": 0, "skipped": 0, "issues": []}
     changed = 0
+    skipped = 0
+    issues = []
     actions = frappe.get_all(
         "Lead Action Execution",
         filters={
@@ -486,20 +795,45 @@ def migrate_open_showing_facts():
         order_by="scheduled_start asc, creation asc",
         limit_page_length=0,
     )
-    for action_name in actions:
+    for action_index, action_name in enumerate(actions):
         action = frappe.get_doc("Lead Action Execution", action_name)
-        for name in action_interest_names(action):
-            already_migrated = frappe.db.exists(
-                "Lead Interest Transition",
-                {
-                    "lead_interest": name,
-                    "action": action.name,
-                    "reason": "Migrated open Showing",
-                },
+        try:
+            names = action_interest_names(action)
+        except Exception as exc:
+            issues.append(
+                _record_migration_issue(
+                    "open Showing fact migration",
+                    "Lead Action Execution",
+                    action_name,
+                    exc,
+                )
             )
-            if already_migrated:
+            skipped += 1
+            continue
+        for interest_index, name in enumerate(names):
+            try:
+                already_migrated = frappe.db.exists(
+                    "Lead Interest Transition",
+                    {
+                        "lead_interest": name,
+                        "action": action.name,
+                        "reason": "Migrated open Showing",
+                    },
+                )
+                if already_migrated:
+                    continue
+                interest = frappe.get_doc("Lead Interest", name)
+            except Exception as exc:
+                issues.append(
+                    _record_migration_issue(
+                        "open Showing fact migration",
+                        "Lead Interest",
+                        name,
+                        exc,
+                    )
+                )
+                skipped += 1
                 continue
-            interest = frappe.get_doc("Lead Interest", name)
             if interest.workflow_status == "Showing Scheduled":
                 continue
             if interest.workflow_status not in {
@@ -509,22 +843,45 @@ def migrate_open_showing_facts():
                 "Shown - Interested",
             }:
                 continue
-            transition_interest(
-                name,
-                "Showing Scheduled",
-                action=action.name,
-                outcome="Scheduled",
-                reason="Migrated open Showing",
-                force=True,
-            )
+            savepoint = f"open_showing_{action_index}_{interest_index}"
+            frappe.db.savepoint(savepoint)
+            try:
+                transition_interest(
+                    name,
+                    "Showing Scheduled",
+                    action=action.name,
+                    outcome="Scheduled",
+                    reason="Migrated open Showing",
+                    force=True,
+                    mirror_legacy=False,
+                )
+            except Exception as exc:
+                frappe.db.rollback(save_point=savepoint)
+                issues.append(
+                    _record_migration_issue(
+                        "open Showing fact migration",
+                        "Lead Interest",
+                        name,
+                        exc,
+                    )
+                )
+                skipped += 1
+                continue
+            finally:
+                try:
+                    frappe.db.release_savepoint(savepoint)
+                except Exception:
+                    pass
             changed += 1
-    return changed
+    return {"changed": changed, "skipped": skipped, "issues": issues}
 
 
 def migrate_showing_and_negotiation_facts():
     if not is_available() or not frappe.db.exists("DocType", "Lead Action Execution"):
-        return 0
+        return {"changed": 0, "skipped": 0, "issues": []}
     changed = 0
+    skipped = 0
+    issues = []
     actions = frappe.get_all(
         "Lead Action Execution",
         filters={
@@ -535,9 +892,21 @@ def migrate_showing_and_negotiation_facts():
         order_by="completed_at asc, creation asc",
         limit_page_length=0,
     )
-    for row in actions:
+    for action_index, row in enumerate(actions):
         action = frappe.get_doc("Lead Action Execution", row.name)
-        names = action_interest_names(action)
+        try:
+            names = action_interest_names(action)
+        except Exception as exc:
+            issues.append(
+                _record_migration_issue(
+                    "action fact migration",
+                    "Lead Action Execution",
+                    row.name,
+                    exc,
+                )
+            )
+            skipped += 1
+            continue
         if not names:
             continue
         result = {}
@@ -559,42 +928,127 @@ def migrate_showing_and_negotiation_facts():
             target = None
         if not target:
             continue
-        for name in names:
-            already_migrated = frappe.db.exists(
-                "Lead Interest Transition",
-                {
-                    "lead_interest": name,
-                    "action": action.name,
-                    "reason": "Migrated action result",
-                },
-            )
-            if already_migrated:
+        for interest_index, name in enumerate(names):
+            try:
+                already_migrated = frappe.db.exists(
+                    "Lead Interest Transition",
+                    {
+                        "lead_interest": name,
+                        "action": action.name,
+                        "reason": "Migrated action result",
+                    },
+                )
+                if already_migrated:
+                    continue
+                interest = frappe.get_doc("Lead Interest", name)
+            except Exception as exc:
+                issues.append(
+                    _record_migration_issue(
+                        "action fact migration",
+                        "Lead Interest",
+                        name,
+                        exc,
+                    )
+                )
+                skipped += 1
                 continue
-            interest = frappe.get_doc("Lead Interest", name)
             if interest.workflow_status == target:
                 continue
-            transition_interest(
-                name,
-                target,
-                action=action.name,
-                outcome=row.outcome,
-                reason="Migrated action result",
-                force=True,
-            )
+            savepoint = f"action_fact_{action_index}_{interest_index}"
+            frappe.db.savepoint(savepoint)
+            try:
+                transition_interest(
+                    name,
+                    target,
+                    action=action.name,
+                    outcome=row.outcome,
+                    reason="Migrated action result",
+                    force=True,
+                    mirror_legacy=False,
+                )
+            except Exception as exc:
+                frappe.db.rollback(save_point=savepoint)
+                issues.append(
+                    _record_migration_issue(
+                        "action fact migration",
+                        "Lead Interest",
+                        name,
+                        exc,
+                    )
+                )
+                skipped += 1
+                continue
+            finally:
+                try:
+                    frappe.db.release_savepoint(savepoint)
+                except Exception:
+                    pass
             changed += 1
-    return changed
+    return {"changed": changed, "skipped": skipped, "issues": issues}
 
 
 def run_full_migration():
     result = {
         "interests": migrate_legacy_lead_interests(),
-        "action_scopes": migrate_action_interest_scopes(),
+        "binding_reconciliation": reconcile_existing_legacy_interest_bindings(),
     }
+    result["action_scopes"] = migrate_action_interest_scopes()
     result["open_showings"] = migrate_open_showing_facts()
     result["action_facts"] = migrate_showing_and_negotiation_facts()
     reconciled = 0
-    for lead in frappe.get_all("CRM Lead", filters={"party_type": "Buyer"}, pluck="name", limit_page_length=0):
-        reconcile_lead_rollup(lead, "Standalone Lead Interest migration")
+    rollup_issues = []
+    for index, lead in enumerate(
+        frappe.get_all(
+            "CRM Lead",
+            filters={"party_type": "Buyer"},
+            pluck="name",
+            limit_page_length=0,
+        )
+    ):
+        savepoint = f"lead_rollup_{index}"
+        frappe.db.savepoint(savepoint)
+        try:
+            legacy_rows = frappe.get_all(
+                "Lead Interested Unit",
+                filters={"parent": lead, "parenttype": "CRM Lead"},
+                pluck="name",
+            )
+            promoted_rows = set(
+                frappe.get_all(
+                    "Lead Interest",
+                    filters={"lead": lead, "legacy_child_row": ["in", legacy_rows]},
+                    pluck="legacy_child_row",
+                )
+            ) if legacy_rows else set()
+            missing_rows = [name for name in legacy_rows if name not in promoted_rows]
+            if missing_rows:
+                raise LegacyInterestDataError(
+                    f"Rollup skipped because {len(missing_rows)} legacy Interests remain unresolved"
+                )
+            reconcile_lead_rollup(lead, "Standalone Lead Interest migration")
+        except Exception as exc:
+            frappe.db.rollback(save_point=savepoint)
+            rollup_issues.append(
+                _record_migration_issue(
+                    "Lead rollup",
+                    "CRM Lead",
+                    lead,
+                    exc,
+                )
+            )
+            continue
+        finally:
+            try:
+                frappe.db.release_savepoint(savepoint)
+            except Exception:
+                pass
         reconciled += 1
     result["leads_reconciled"] = reconciled
+    result["rollup_issues"] = rollup_issues
+    issue_count = sum(
+        len(value.get("issues", []))
+        for value in result.values()
+        if isinstance(value, dict)
+    ) + len(rollup_issues)
+    print(f"Standalone Interest migration completed with {issue_count} skipped issue(s).")
     return result
