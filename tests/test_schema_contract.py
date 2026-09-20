@@ -27,6 +27,21 @@ def literal_assignment(path, name):
 
 
 class SchemaContractTests(unittest.TestCase):
+    def test_all_link_filters_use_frappe_v16_four_value_rows(self):
+        records = json.loads(FIXTURE.read_text())
+        for schema_path in DOCTYPE_ROOT.glob("*/*.json"):
+            records.extend(json.loads(schema_path.read_text()).get("fields", []))
+        for record in records:
+            raw_filters = record.get("link_filters")
+            if not raw_filters:
+                continue
+            filters = json.loads(raw_filters)
+            self.assertIsInstance(filters, list, record.get("fieldname"))
+            self.assertTrue(filters, record.get("fieldname"))
+            for filter_row in filters:
+                self.assertIsInstance(filter_row, list, record.get("fieldname"))
+                self.assertEqual(len(filter_row), 4, record.get("fieldname"))
+
     def test_every_custom_doctype_has_a_python_controller(self):
         for schema_path in DOCTYPE_ROOT.glob("*/*.json"):
             controller_path = schema_path.with_suffix(".py")
@@ -74,7 +89,10 @@ class SchemaContractTests(unittest.TestCase):
         ])
         self.assertEqual(fields["physical_unit_type"]["options"], "Real Estate Unit Type")
         self.assertEqual(fields["destination"]["options"], "Real Estate Destination")
-        self.assertEqual(json.loads(fields["owner_lead"]["link_filters"]), {"party_type": "Seller"})
+        self.assertEqual(
+            json.loads(fields["owner_lead"]["link_filters"]),
+            [["CRM Lead", "party_type", "=", "Seller"]],
+        )
         for output in (
             "over_net",
             "down_payment",

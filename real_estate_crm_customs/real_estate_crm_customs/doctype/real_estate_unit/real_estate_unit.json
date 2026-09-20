@@ -91,7 +91,7 @@
     {"fieldname": "delivery_status", "fieldtype": "Select", "in_list_view": 1, "in_standard_filter": 1, "label": "Delivery Status", "options": "Ready to Move\nOff Plan", "read_only": 1},
     {"default": "Available", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1, "in_standard_filter": 1, "label": "Availability Status", "options": "Available\nReserved\nSold", "reqd": 1},
     {"fieldname": "ownership_section", "fieldtype": "Section Break", "label": "Ownership and Reference"},
-    {"fieldname": "owner_lead", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Seller Owner", "link_filters": "{\"party_type\":\"Seller\"}", "options": "CRM Lead"},
+    {"fieldname": "owner_lead", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Seller Owner", "link_filters": "[[\"CRM Lead\",\"party_type\",\"=\",\"Seller\"]]", "options": "CRM Lead"},
     {"description": "Compatibility value retained for migrated records. Unit Number and SKU are authoritative.", "fieldname": "legacy_property_code", "fieldtype": "Data", "hidden": 1, "label": "Legacy Property Code", "read_only": 1},
     {"description": "Compatibility note retained for migrated records. Destination and Compound are authoritative.", "fieldname": "property_location_note", "fieldtype": "Small Text", "hidden": 1, "label": "Legacy Property Location", "read_only": 1},
     {"fieldname": "sku", "fieldtype": "Data", "in_list_view": 1, "in_standard_filter": 1, "label": "SKU", "read_only": 1, "unique": 1},

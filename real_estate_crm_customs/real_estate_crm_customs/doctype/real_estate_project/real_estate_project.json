@@ -28,7 +28,7 @@
     {"fieldname": "compound_information_section", "fieldtype": "Section Break", "label": "Compound Information"},
     {"fieldname": "project_name", "fieldtype": "Data", "in_list_view": 1, "in_standard_filter": 1, "label": "Compound Name", "reqd": 1, "unique": 1},
     {"fieldname": "developer", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Developer", "options": "Property Developer", "reqd": 1},
-    {"fieldname": "destination", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Destination", "link_filters": "{\"is_active\":1}", "options": "Real Estate Destination", "reqd": 1},
+    {"fieldname": "destination", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Destination", "link_filters": "[[\"Real Estate Destination\",\"is_active\",\"=\",1]]", "options": "Real Estate Destination", "reqd": 1},
     {"description": "Legacy free-text geography retained for migration reference only.", "fieldname": "location", "fieldtype": "Data", "hidden": 1, "label": "Legacy Location", "read_only": 1},
     {"default": "Planning", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1, "in_standard_filter": 1, "label": "Compound Status", "options": "Planning\nLaunched\nUnder Construction\nDelivered", "reqd": 1},
     {"fieldname": "compound_details_section", "fieldtype": "Section Break", "label": "Compound Details"},

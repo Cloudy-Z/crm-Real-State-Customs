@@ -85,7 +85,7 @@
   "insert_after": "preferred_unit_type",
   "depends_on": "eval:doc.party_type == 'Buyer'",
   "name": "CRM Lead-preferred_destination",
-  "link_filters": "{\"is_active\":1}"
+  "link_filters": "[[\"Real Estate Destination\",\"is_active\",\"=\",1]]"
  },
  {
   "doctype": "Custom Field",
