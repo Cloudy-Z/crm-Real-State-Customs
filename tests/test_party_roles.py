@@ -1,7 +1,9 @@
 import unittest
 
 from real_estate_crm_customs.party_roles import (
+    normalize_lead_view_columns,
     normalize_lead_view_filters,
+    normalize_lead_view_rows,
     normalize_party_role,
     party_role_from_view_filters,
     remove_fields_from_layout,
@@ -80,6 +82,23 @@ class PartyRoleTests(unittest.TestCase):
         self.assertTrue(changed)
         self.assertIsNone(party_role_from_view_filters({"party_type": "Owner"}))
         self.assertIsNone(party_role_from_view_filters("not-json"))
+
+    def test_normalizes_legacy_saved_view_columns_and_rows(self):
+        columns = normalize_lead_view_columns(
+            [
+                {"label": "Name", "key": "lead_name", "type": "Data"},
+                {"label": "Type", "key": "custom_type", "type": "Select"},
+                {"label": "Duplicate", "key": "party_type", "type": "Data"},
+            ]
+        )
+        self.assertEqual([column["key"] for column in columns], ["lead_name", "party_type"])
+        self.assertEqual(columns[1]["label"], "Party Role")
+        self.assertEqual(
+            normalize_lead_view_rows(
+                ["name", None, "custom_type", "party_type", "lead_type"]
+            ),
+            ["name", "party_type"],
+        )
 
     def test_removes_aliases_from_flat_layout(self):
         layout = [

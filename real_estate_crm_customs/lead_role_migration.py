@@ -11,8 +11,10 @@ import json
 import frappe
 
 from real_estate_crm_customs.party_roles import (
+    normalize_lead_view_columns,
     normalize_party_role,
     normalize_lead_view_filters,
+    normalize_lead_view_rows,
     remove_fields_from_layout,
     remove_fields_from_quick_filters,
     resolve_party_role,
@@ -77,13 +79,25 @@ def _migrate_lead_view_routes():
     for view in frappe.get_all(
         "CRM View Settings",
         filters={"dt": "CRM Lead"},
-        fields=["name", "filters", "route_name"],
+        fields=["name", "filters", "columns", "rows", "route_name"],
         limit_page_length=0,
     ):
         filters, role, filters_changed = normalize_lead_view_filters(view.filters)
         values = {}
         if filters_changed:
             values["filters"] = json.dumps(filters, ensure_ascii=False)
+        for fieldname, normalizer in (
+            ("columns", normalize_lead_view_columns),
+            ("rows", normalize_lead_view_rows),
+        ):
+            raw_value = view.get(fieldname)
+            try:
+                parsed_value = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
+            except (TypeError, ValueError):
+                parsed_value = None
+            normalized_value = normalizer(raw_value)
+            if parsed_value != normalized_value:
+                values[fieldname] = json.dumps(normalized_value, ensure_ascii=False)
         if role and view.route_name == "Leads":
             values["route_name"] = "Buyers" if role == "Buyer" else "Sellers"
         if not values:

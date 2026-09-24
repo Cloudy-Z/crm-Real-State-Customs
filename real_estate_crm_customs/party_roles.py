@@ -87,6 +87,58 @@ def party_role_from_view_filters(filters):
     return role
 
 
+def _json_list(value):
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError):
+            return []
+    return value if isinstance(value, list) else []
+
+
+def normalize_lead_view_columns(columns):
+    """Replace obsolete role columns and remove malformed or duplicate entries."""
+    normalized = []
+    seen = set()
+    for column in _json_list(columns):
+        if not isinstance(column, dict):
+            continue
+        item = dict(column)
+        key = item.get("key")
+        if key in LEGACY_ROLE_FILTER_FIELDS:
+            key = "party_type"
+            item.update(
+                {
+                    "key": key,
+                    "label": "Party Role",
+                    "type": "Select",
+                    "options": [
+                        {"label": "Buyer", "value": "Buyer"},
+                        {"label": "Seller", "value": "Seller"},
+                    ],
+                }
+            )
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        normalized.append(item)
+    return normalized
+
+
+def normalize_lead_view_rows(rows):
+    """Replace obsolete role row fields and remove malformed or duplicate entries."""
+    normalized = []
+    seen = set()
+    for fieldname in _json_list(rows):
+        if fieldname in LEGACY_ROLE_FILTER_FIELDS:
+            fieldname = "party_type"
+        if not isinstance(fieldname, str) or not fieldname or fieldname in seen:
+            continue
+        seen.add(fieldname)
+        normalized.append(fieldname)
+    return normalized
+
+
 def remove_fields_from_layout(layout, fieldnames):
     """Remove field references from flat-section or tabbed CRM layout JSON."""
     if not isinstance(layout, list):

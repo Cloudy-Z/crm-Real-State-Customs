@@ -6,3 +6,4 @@ real_estate_crm_customs.patches.v16_0.unify_real_estate_fields
 real_estate_crm_customs.patches.v16_0.remove_legacy_lead_role_fields
 real_estate_crm_customs.patches.v16_0.repair_historical_lead_roles
 real_estate_crm_customs.patches.v16_0.repair_legacy_lead_view_filters
+real_estate_crm_customs.patches.v16_0.repair_legacy_lead_view_schema

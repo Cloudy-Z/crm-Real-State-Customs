@@ -254,12 +254,18 @@ class SchemaContractTests(unittest.TestCase):
             "real_estate_crm_customs.patches.v16_0.repair_legacy_lead_view_filters",
             PATCHES.read_text(),
         )
+        self.assertIn(
+            "real_estate_crm_customs.patches.v16_0.repair_legacy_lead_view_schema",
+            PATCHES.read_text(),
+        )
         self.assertIn('"Real Estate Unit", "owner_lead"', migration_source)
         self.assertIn('"Lead Interest", "lead"', migration_source)
         self.assertIn("resolve_party_role(", migration_source)
         self.assertIn('"CRM View Settings"', migration_source)
         self.assertIn('"Buyers" if role == "Buyer" else "Sellers"', migration_source)
         self.assertIn("normalize_lead_view_filters", migration_source)
+        self.assertIn("normalize_lead_view_columns", migration_source)
+        self.assertIn("normalize_lead_view_rows", migration_source)
         self.assertIn("def _clear_legacy_role_values", migration_source)
         self.assertIn("_clear_legacy_role_values()", migration_source)
 
