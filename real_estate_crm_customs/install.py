@@ -3,6 +3,9 @@ import json
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
+from real_estate_crm_customs.lead_role_migration import (
+    enforce_canonical_party_role_schema,
+)
 from real_estate_crm_customs.master_data import ensure_default_unit_types
 
 
@@ -94,6 +97,38 @@ REAL_ESTATE_FIELD_LAYOUTS = {
             }
         ],
     },
+    "Property Developer-Data Fields": {
+        "doctype": "Property Developer",
+        "type": "Data Fields",
+        "layout": [
+            {
+                "label": "Developer Information",
+                "name": "developer_data_section",
+                "opened": True,
+                "columns": [
+                    {
+                        "name": "column_developer_data_a",
+                        "fields": ["developer_name", "founded_year", "company_registration"],
+                    },
+                    {
+                        "name": "column_developer_data_b",
+                        "fields": ["description"],
+                    },
+                ],
+            },
+            {
+                "label": "Founders",
+                "name": "developer_founders_data_section",
+                "opened": True,
+                "columns": [
+                    {
+                        "name": "column_developer_founders_data",
+                        "fields": ["founders"],
+                    }
+                ],
+            },
+        ],
+    },
     "Real Estate Destination-Quick Entry": {
         "doctype": "Real Estate Destination",
         "type": "Quick Entry",
@@ -104,6 +139,27 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "columns": [
                     {"name": "column_destination_a", "fields": ["destination_name", "destination_code"]},
                     {"name": "column_destination_b", "fields": ["is_active", "description"]},
+                ],
+            }
+        ],
+    },
+    "Real Estate Destination-Data Fields": {
+        "doctype": "Real Estate Destination",
+        "type": "Data Fields",
+        "layout": [
+            {
+                "label": "Destination Information",
+                "name": "destination_data_section",
+                "opened": True,
+                "columns": [
+                    {
+                        "name": "column_destination_data_a",
+                        "fields": ["destination_name", "destination_code", "is_active"],
+                    },
+                    {
+                        "name": "column_destination_data_b",
+                        "fields": ["description"],
+                    },
                 ],
             }
         ],
@@ -180,7 +236,29 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "opened": True,
                 "columns": [
                     {"name": "column_unit_financial_data_a", "fields": ["paid", "over_price", "over_is_gross", "over_net", "down_payment", "remaining", "maintenance"]},
-                    {"name": "column_unit_financial_data_b", "fields": ["property_tax", "commission", "total_price_net", "total_gross", "rental_monthly_rate", "rental_daily_rate"]},
+                    {"name": "column_unit_financial_data_b", "fields": ["property_tax", "commission", "total_price_net", "total_gross"]},
+                ],
+            },
+            {
+                "label": "Rental Information",
+                "name": "unit_rental_data_section",
+                "opened": True,
+                "columns": [
+                    {
+                        "name": "column_unit_rental_data",
+                        "fields": ["rental_monthly_rate", "rental_daily_rate"],
+                    }
+                ],
+            },
+            {
+                "label": "Scheduled Showings",
+                "name": "unit_showings_data_section",
+                "opened": True,
+                "columns": [
+                    {
+                        "name": "column_unit_showings_data",
+                        "fields": ["scheduled_showings"],
+                    }
                 ],
             },
         ],
@@ -211,6 +289,72 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                     {"name": "column_compound_data_a", "fields": ["project_name", "developer", "destination", "status"]},
                     {"name": "column_compound_data_b", "fields": ["compound_area", "compound_area_unit", "master_plan", "description"]},
                     {"name": "column_compound_data_c", "fields": ["phases", "available_unit_types", "amenities"]},
+                ],
+            }
+        ],
+    },
+    "Real Estate Unit Type-Quick Entry": {
+        "doctype": "Real Estate Unit Type",
+        "type": "Quick Entry",
+        "layout": [
+            {
+                "label": "Unit Type Information",
+                "name": "unit_type_section",
+                "columns": [
+                    {
+                        "name": "column_unit_type_a",
+                        "fields": ["unit_type_name", "abbreviation", "is_active"],
+                    }
+                ],
+            }
+        ],
+    },
+    "Real Estate Unit Type-Data Fields": {
+        "doctype": "Real Estate Unit Type",
+        "type": "Data Fields",
+        "layout": [
+            {
+                "label": "Unit Type Information",
+                "name": "unit_type_data_section",
+                "opened": True,
+                "columns": [
+                    {
+                        "name": "column_unit_type_data",
+                        "fields": ["unit_type_name", "abbreviation", "is_active"],
+                    }
+                ],
+            }
+        ],
+    },
+    "Real Estate Amenity-Quick Entry": {
+        "doctype": "Real Estate Amenity",
+        "type": "Quick Entry",
+        "layout": [
+            {
+                "label": "Amenity Information",
+                "name": "amenity_section",
+                "columns": [
+                    {
+                        "name": "column_amenity_a",
+                        "fields": ["amenity_name", "description"],
+                    }
+                ],
+            }
+        ],
+    },
+    "Real Estate Amenity-Data Fields": {
+        "doctype": "Real Estate Amenity",
+        "type": "Data Fields",
+        "layout": [
+            {
+                "label": "Amenity Information",
+                "name": "amenity_data_section",
+                "opened": True,
+                "columns": [
+                    {
+                        "name": "column_amenity_data",
+                        "fields": ["amenity_name", "description"],
+                    }
                 ],
             }
         ],
@@ -276,6 +420,31 @@ REAL_ESTATE_STANDARD_VIEWS = [
         ],
         "rows": ["name", "unit_number", "sku", "project", "destination", "developer", "inventory_type", "physical_unit_type", "status", "total_gross", "owner_lead", "modified"],
     },
+    {
+        "label": "Unit Types",
+        "dt": "Real Estate Unit Type",
+        "route_name": "Real Estate Unit Types",
+        "icon": "shapes",
+        "columns": [
+            {"label": "Unit Type", "type": "Data", "key": "unit_type_name", "width": "16rem"},
+            {"label": "Abbreviation", "type": "Data", "key": "abbreviation", "width": "10rem"},
+            {"label": "Active", "type": "Check", "key": "is_active", "width": "8rem"},
+            {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
+        ],
+        "rows": ["name", "unit_type_name", "abbreviation", "is_active", "modified"],
+    },
+    {
+        "label": "Amenities",
+        "dt": "Real Estate Amenity",
+        "route_name": "Real Estate Amenities",
+        "icon": "sparkles",
+        "columns": [
+            {"label": "Amenity", "type": "Data", "key": "amenity_name", "width": "16rem"},
+            {"label": "Description", "type": "Small Text", "key": "description", "width": "24rem"},
+            {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
+        ],
+        "rows": ["name", "amenity_name", "description", "modified"],
+    },
 ]
 
 REAL_ESTATE_QUICK_FILTERS = {
@@ -284,6 +453,8 @@ REAL_ESTATE_QUICK_FILTERS = {
     "Property Developer": ["developer_name", "founded_year", "company_registration"],
     "Real Estate Project": ["project_name", "destination", "developer", "status"],
     "Real Estate Destination": ["destination_name", "destination_code", "is_active"],
+    "Real Estate Unit Type": ["unit_type_name", "abbreviation", "is_active"],
+    "Real Estate Amenity": ["amenity_name"],
 }
 
 
@@ -341,11 +512,10 @@ def setup_crm_lead_custom_fields():
         "Real Estate Unit Type",
     )
     create_custom_fields(custom_fields, update=True)
+    enforce_canonical_party_role_schema()
     _deprecate_custom_field_metadata(
         "CRM Lead",
         (
-            "custom_type",
-            "lead_type",
             "mobile_country_code",
             "whatsapp_country_code",
             "no_answer_first_call",

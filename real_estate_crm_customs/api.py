@@ -67,27 +67,11 @@ def _to_int(value):
         return 0
 
 
-def _apply_party_role_aliases(doc):
+def _enforce_canonical_party_role(doc):
     raw_party_role = doc.get("party_type")
-    canonical = _normalize_party_role(raw_party_role)
-    if raw_party_role and not canonical:
+    if raw_party_role and raw_party_role not in ("Buyer", "Seller"):
         frappe.throw(_("Party Role must be Buyer or Seller."), frappe.ValidationError)
-    aliases = []
-    for fieldname in ("custom_type", "lead_type"):
-        if doc.meta.has_field(fieldname) and doc.get(fieldname):
-            normalized = _normalize_party_role(doc.get(fieldname))
-            if normalized:
-                aliases.append((fieldname, normalized))
-    valid_aliases = {value for _, value in aliases}
-    if (doc.is_new() or not canonical) and len(valid_aliases) > 1:
-        frappe.throw(_("Legacy Lead type fields conflict. Keep one Buyer/Seller value."))
-    alias = next(iter(valid_aliases), None)
-    if doc.is_new() and alias:
-        canonical = alias
-    elif not canonical and alias:
-        canonical = alias
-    canonical = canonical or alias or "Buyer"
-    doc.party_type = canonical
+    doc.party_type = raw_party_role or "Buyer"
 
 
 def _ensure_lead_status(status, status_type="Ongoing", color="orange", position=30):
@@ -223,10 +207,29 @@ IDEAL_STAGE_DAYS = {
     LEAD_STATUS_OFFER_SELECTED: 7,
 }
 
+REAL_ESTATE_FORM_DOCTYPES = {
+    "Real Estate Unit",
+    "Real Estate Project",
+    "Property Developer",
+    "Real Estate Destination",
+    "Real Estate Unit Type",
+    "Real Estate Amenity",
+}
+
+
+@frappe.whitelist()
+def get_real_estate_doctype_permissions(doctype):
+    if doctype not in REAL_ESTATE_FORM_DOCTYPES:
+        frappe.throw(_("Unsupported real-estate DocType."), frappe.PermissionError)
+    return {
+        permission: bool(frappe.has_permission(doctype, ptype=permission))
+        for permission in ("read", "create", "write", "delete")
+    }
+
 
 def guard_crm_lead_workflow(doc, method=None):
     """Prevent agent-side manual status changes and direct child-row deletion."""
-    _apply_party_role_aliases(doc)
+    _enforce_canonical_party_role(doc)
     if doc.is_new():
         return
 
@@ -234,9 +237,12 @@ def guard_crm_lead_workflow(doc, method=None):
     if not previous:
         return
 
+    previous_role = _normalize_party_role(previous.get("party_type"))
+    current_role = doc.get("party_type")
+
     if (
-        previous.get("party_type") == "Seller"
-        and doc.get("party_type") != "Seller"
+        previous_role == "Seller"
+        and current_role != "Seller"
         and frappe.db.exists("DocType", "Real Estate Unit")
     ):
         owned_units = frappe.db.count("Real Estate Unit", {"owner_lead": doc.name})
@@ -245,6 +251,62 @@ def guard_crm_lead_workflow(doc, method=None):
                 _("This Lead owns {0} Unit(s). Transfer or remove ownership before changing Party Role.").format(
                     owned_units
                 ),
+                frappe.ValidationError,
+            )
+
+    if previous_role == "Buyer" and current_role != "Buyer":
+        standalone_interests = 0
+        if frappe.db.exists("DocType", "Lead Interest"):
+            standalone_interests = frappe.db.count(
+                "Lead Interest",
+                {"lead": doc.name},
+            )
+        legacy_interests = 0
+        if frappe.db.exists("DocType", "Lead Interested Unit"):
+            legacy_interests = frappe.db.count(
+                "Lead Interested Unit",
+                {"parent": doc.name, "parenttype": "CRM Lead"},
+            )
+        interest_count = max(standalone_interests, legacy_interests)
+        if interest_count:
+            frappe.throw(
+                _(
+                    "This Lead has {0} Interest record(s). Resolve or remove them before changing Party Role."
+                ).format(interest_count),
+                frappe.ValidationError,
+            )
+
+        active_showings = 0
+        if frappe.db.exists("DocType", "Unit Scheduled Showing"):
+            active_showings = frappe.db.count(
+                "Unit Scheduled Showing",
+                {
+                    "buyer_lead": doc.name,
+                    "status": ["in", ["Scheduled", "Rescheduled"]],
+                },
+            )
+        if active_showings:
+            frappe.throw(
+                _(
+                    "This Lead has {0} active Showing record(s). Complete or cancel them before changing Party Role."
+                ).format(active_showings),
+                frappe.ValidationError,
+            )
+
+        active_actions = 0
+        if frappe.db.exists("DocType", "Lead Action Execution"):
+            active_actions = frappe.db.count(
+                "Lead Action Execution",
+                {
+                    "lead": doc.name,
+                    "workflow_status": ["in", ["Planned", "Due", "In Progress"]],
+                },
+            )
+        if active_actions:
+            frappe.throw(
+                _(
+                    "This Lead has {0} active workflow action(s). Complete or cancel them before changing Party Role."
+                ).format(active_actions),
                 frappe.ValidationError,
             )
 

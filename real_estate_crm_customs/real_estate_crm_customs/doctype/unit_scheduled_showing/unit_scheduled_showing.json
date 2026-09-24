@@ -25,6 +25,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Buyer Lead",
+   "link_filters": "[[\"CRM Lead\", \"party_type\", \"=\", \"Buyer\"]]",
    "options": "CRM Lead",
    "reqd": 1
   },

@@ -12,6 +12,8 @@ HOOKS = ROOT / "real_estate_crm_customs" / "hooks.py"
 INSTALL = ROOT / "real_estate_crm_customs" / "install.py"
 API = ROOT / "real_estate_crm_customs" / "api.py"
 INTEREST_WORKFLOW = ROOT / "real_estate_crm_customs" / "interest_workflow.py"
+PARTY_ROLE_MIGRATION = ROOT / "real_estate_crm_customs" / "lead_role_migration.py"
+PATCHES = ROOT / "real_estate_crm_customs" / "patches.txt"
 LEAD_INTEREST_CONTROLLER = (
     DOCTYPE_ROOT / "lead_interest" / "lead_interest.py"
 )
@@ -228,6 +230,30 @@ class SchemaContractTests(unittest.TestCase):
         for field in lead_fields.values():
             self.assertNotIn(field.get("insert_after"), stale, field["fieldname"])
 
+    def test_party_type_is_the_only_runtime_lead_role_source(self):
+        api_source = API.read_text()
+        self.assertIn("def _enforce_canonical_party_role", api_source)
+        self.assertNotIn("custom_type", api_source)
+        self.assertNotIn("lead_type", api_source)
+        self.assertIn('"Unit Scheduled Showing"', api_source)
+        self.assertIn('"Lead Action Execution"', api_source)
+        self.assertIn("def get_real_estate_doctype_permissions", api_source)
+
+        migration_source = PARTY_ROLE_MIGRATION.read_text()
+        self.assertIn('LEGACY_ROLE_FIELDS = ("custom_type", "lead_type")', migration_source)
+        self.assertIn("remove_legacy_role_metadata()", migration_source)
+        self.assertIn(
+            "real_estate_crm_customs.patches.v16_0.remove_legacy_lead_role_fields",
+            PATCHES.read_text(),
+        )
+
+        showing_controller = (
+            DOCTYPE_ROOT
+            / "unit_scheduled_showing"
+            / "unit_scheduled_showing.py"
+        ).read_text()
+        self.assertIn('party_type != "Buyer"', showing_controller)
+
     def test_hook_fixture_filter_matches_custom_field_fixture(self):
         fixtures = literal_assignment(HOOKS, "fixtures")
         exported_names = {
@@ -247,6 +273,8 @@ class SchemaContractTests(unittest.TestCase):
             "Real Estate Destination": "real_estate_destination",
             "Real Estate Project": "real_estate_project",
             "Real Estate Unit": "real_estate_unit",
+            "Real Estate Unit Type": "real_estate_unit_type",
+            "Real Estate Amenity": "real_estate_amenity",
         }
         for layout_name, settings in layouts.items():
             schema = load_doctype(folder_by_doctype[settings["doctype"]])
@@ -258,6 +286,33 @@ class SchemaContractTests(unittest.TestCase):
                 for fieldname in column["fields"]
             }
             self.assertFalse(configured - valid, f"{layout_name}: {configured - valid}")
+
+        layout_keys = {
+            (settings["doctype"], settings["type"]) for settings in layouts.values()
+        }
+        expected_masters = set(folder_by_doctype)
+        self.assertTrue(
+            {(doctype, "Quick Entry") for doctype in expected_masters}
+            <= layout_keys
+        )
+        self.assertTrue(
+            {(doctype, "Data Fields") for doctype in expected_masters}
+            <= layout_keys
+        )
+
+    def test_all_real_estate_masters_have_standard_views_and_filters(self):
+        expected = {
+            "Real Estate Unit",
+            "Real Estate Project",
+            "Property Developer",
+            "Real Estate Destination",
+            "Real Estate Unit Type",
+            "Real Estate Amenity",
+        }
+        views = literal_assignment(INSTALL, "REAL_ESTATE_STANDARD_VIEWS")
+        filters = literal_assignment(INSTALL, "REAL_ESTATE_QUICK_FILTERS")
+        self.assertTrue(expected <= {view["dt"] for view in views})
+        self.assertTrue(expected <= set(filters))
 
 
 if __name__ == "__main__":
