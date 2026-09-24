@@ -2,8 +2,10 @@ import unittest
 
 from real_estate_crm_customs.party_roles import (
     normalize_party_role,
+    party_role_from_view_filters,
     remove_fields_from_layout,
     remove_fields_from_quick_filters,
+    resolve_party_role,
 )
 
 
@@ -19,6 +21,51 @@ class PartyRoleTests(unittest.TestCase):
     def test_unknown_values_do_not_guess(self):
         self.assertIsNone(normalize_party_role("Investor"))
         self.assertIsNone(normalize_party_role(""))
+
+    def test_relationship_evidence_has_priority(self):
+        self.assertEqual(
+            resolve_party_role("Buyer", (), owns_unit=True),
+            ("Seller", "unit_owner"),
+        )
+        self.assertEqual(
+            resolve_party_role("Seller", (), has_interest=True),
+            ("Buyer", "lead_interest"),
+        )
+        self.assertEqual(
+            resolve_party_role("Buyer", (), owns_unit=True, has_interest=True),
+            ("Seller", "relationship_conflict"),
+        )
+
+    def test_unambiguous_legacy_alias_repairs_stale_canonical_default(self):
+        self.assertEqual(
+            resolve_party_role("Buyer", ("Seller",)),
+            ("Seller", "legacy_alias_conflict"),
+        )
+        self.assertEqual(
+            resolve_party_role("", ("buyer lead",)),
+            ("Buyer", "legacy_alias"),
+        )
+
+    def test_ambiguous_or_missing_evidence_requires_explicit_default_policy(self):
+        self.assertEqual(
+            resolve_party_role("", ("Buyer", "Seller")),
+            (None, "legacy_alias_conflict"),
+        )
+        self.assertEqual(resolve_party_role("", ()), (None, "missing"))
+
+    def test_reads_only_canonical_party_roles_from_saved_view_filters(self):
+        self.assertEqual(
+            party_role_from_view_filters('{"party_type": "Buyer"}'),
+            "Buyer",
+        )
+        self.assertEqual(
+            party_role_from_view_filters({"party_type": ["=", "Seller"]}),
+            "Seller",
+        )
+        self.assertIsNone(
+            party_role_from_view_filters({"party_type": "Owner"})
+        )
+        self.assertIsNone(party_role_from_view_filters("not-json"))
 
     def test_removes_aliases_from_flat_layout(self):
         layout = [

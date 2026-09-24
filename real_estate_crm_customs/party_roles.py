@@ -1,5 +1,7 @@
 """Canonical real-estate party roles shared by runtime validation and migrations."""
 
+import json
+
 
 PARTY_ROLE_ALIASES = {
     "buyer": "Buyer",
@@ -16,6 +18,46 @@ PARTY_ROLE_ALIASES = {
 def normalize_party_role(value):
     normalized = " ".join(str(value or "").strip().lower().split())
     return PARTY_ROLE_ALIASES.get(normalized)
+
+
+def resolve_party_role(canonical, aliases=(), *, owns_unit=False, has_interest=False):
+    """Resolve historical evidence without silently preserving a stale default."""
+    canonical_role = normalize_party_role(canonical)
+    alias_roles = {
+        role for role in (normalize_party_role(value) for value in aliases) if role
+    }
+
+    if owns_unit:
+        reason = "relationship_conflict" if has_interest else "unit_owner"
+        return "Seller", reason
+    if has_interest:
+        return "Buyer", "lead_interest"
+    if len(alias_roles) == 1:
+        alias_role = next(iter(alias_roles))
+        if canonical_role and canonical_role != alias_role:
+            return alias_role, "legacy_alias_conflict"
+        return alias_role, "legacy_alias"
+    if canonical_role:
+        return canonical_role, "canonical"
+    if len(alias_roles) > 1:
+        return None, "legacy_alias_conflict"
+    return None, "missing"
+
+
+def party_role_from_view_filters(filters):
+    """Read a canonical Party Role from CRM View Settings filter JSON."""
+    if isinstance(filters, str):
+        try:
+            filters = json.loads(filters)
+        except (TypeError, ValueError):
+            return None
+    if not isinstance(filters, dict):
+        return None
+    value = filters.get("party_type")
+    if isinstance(value, list):
+        value = value[-1] if value else None
+    role = normalize_party_role(value)
+    return role if value in {"Buyer", "Seller"} else None
 
 
 def remove_fields_from_layout(layout, fieldnames):

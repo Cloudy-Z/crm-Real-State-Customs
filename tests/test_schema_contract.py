@@ -246,6 +246,15 @@ class SchemaContractTests(unittest.TestCase):
             "real_estate_crm_customs.patches.v16_0.remove_legacy_lead_role_fields",
             PATCHES.read_text(),
         )
+        self.assertIn(
+            "real_estate_crm_customs.patches.v16_0.repair_historical_lead_roles",
+            PATCHES.read_text(),
+        )
+        self.assertIn('"Real Estate Unit", "owner_lead"', migration_source)
+        self.assertIn('"Lead Interest", "lead"', migration_source)
+        self.assertIn("resolve_party_role(", migration_source)
+        self.assertIn('"CRM View Settings"', migration_source)
+        self.assertIn('"Buyers" if role == "Buyer" else "Sellers"', migration_source)
 
         showing_controller = (
             DOCTYPE_ROOT

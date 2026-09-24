@@ -12,8 +12,10 @@ import frappe
 
 from real_estate_crm_customs.party_roles import (
     normalize_party_role,
+    party_role_from_view_filters,
     remove_fields_from_layout,
     remove_fields_from_quick_filters,
+    resolve_party_role,
 )
 
 
@@ -23,18 +25,83 @@ CANONICAL_ROLES = {"Buyer", "Seller"}
 
 def _log_issue(lead_name, message):
     frappe.log_error(
-        title="CRM Lead Party Role migration requires review",
+        title="CRM Lead Party Role migration audit",
         message=f"{lead_name}: {message}",
     )
 
 
+def _linked_leads(doctype, fieldname):
+    if not frappe.db.exists("DocType", doctype):
+        return set()
+    if not frappe.db.has_column(doctype, fieldname):
+        return set()
+    return {
+        row[fieldname]
+        for row in frappe.get_all(
+            doctype,
+            filters={fieldname: ["is", "set"]},
+            fields=[fieldname],
+            limit_page_length=0,
+        )
+        if row.get(fieldname)
+    }
+
+
+def _lead_role_rows(alias_fields):
+    Lead = frappe.qb.DocType("CRM Lead")
+    fields = [Lead.name, Lead.party_type]
+    fields.extend(getattr(Lead, fieldname) for fieldname in alias_fields)
+    return frappe.qb.from_(Lead).select(*fields).run(as_dict=True)
+
+
+def _legacy_interest_leads():
+    doctype = "Lead Interested Unit"
+    if not frappe.db.exists("DocType", doctype):
+        return set()
+    return {
+        row.parent
+        for row in frappe.get_all(
+            doctype,
+            filters={"parenttype": "CRM Lead"},
+            fields=["parent"],
+            limit_page_length=0,
+        )
+        if row.get("parent")
+    }
+
+
+def _migrate_lead_view_routes():
+    if not frappe.db.exists("DocType", "CRM View Settings"):
+        return 0
+    updated = 0
+    for view in frappe.get_all(
+        "CRM View Settings",
+        filters={"dt": "CRM Lead", "route_name": "Leads"},
+        fields=["name", "filters"],
+        limit_page_length=0,
+    ):
+        role = party_role_from_view_filters(view.filters)
+        if not role:
+            continue
+        frappe.db.set_value(
+            "CRM View Settings",
+            view.name,
+            "route_name",
+            "Buyers" if role == "Buyer" else "Sellers",
+            update_modified=False,
+        )
+        updated += 1
+    return updated
+
+
 def reconcile_party_roles():
-    """Populate the canonical field without allowing aliases to override it."""
+    """Populate the canonical field from the strongest available evidence."""
     summary = {
         "updated": 0,
         "defaulted": 0,
         "conflicts": 0,
         "invalid_values": 0,
+        "relationship_repairs": 0,
     }
     if not frappe.db.exists("DocType", "CRM Lead"):
         return summary
@@ -46,8 +113,13 @@ def reconcile_party_roles():
         for fieldname in LEGACY_ROLE_FIELDS
         if frappe.db.has_column("CRM Lead", fieldname)
     ]
-    fields = ["name", "party_type", *alias_fields]
-    for lead in frappe.get_all("CRM Lead", fields=fields, limit_page_length=0):
+    unit_owners = _linked_leads("Real Estate Unit", "owner_lead")
+    interest_leads = (
+        _linked_leads("Lead Interest", "lead")
+        | _legacy_interest_leads()
+        | _linked_leads("Unit Scheduled Showing", "buyer_lead")
+    )
+    for lead in _lead_role_rows(alias_fields):
         raw_canonical = lead.get("party_type")
         canonical = normalize_party_role(raw_canonical)
         raw_aliases = {
@@ -56,10 +128,12 @@ def reconcile_party_roles():
             if lead.get(fieldname)
         }
         aliases = {
-            normalize_party_role(value)
-            for value in raw_aliases.values()
+            role
+            for role in (
+                normalize_party_role(value) for value in raw_aliases.values()
+            )
+            if role
         }
-        aliases.discard(None)
         invalid_values = {
             fieldname: value
             for fieldname, value in {
@@ -76,31 +150,33 @@ def reconcile_party_roles():
                 f"discarded invalid role values={invalid_values!r}",
             )
 
-        if canonical in CANONICAL_ROLES:
-            if aliases and aliases != {canonical}:
-                summary["conflicts"] += 1
+        role, reason = resolve_party_role(
+            raw_canonical,
+            raw_aliases.values(),
+            owns_unit=lead.name in unit_owners,
+            has_interest=lead.name in interest_leads,
+        )
+        if reason in {"relationship_conflict", "legacy_alias_conflict"}:
+            summary["conflicts"] += 1
+            _log_issue(
+                lead.name,
+                f"Party Role evidence conflict: canonical={canonical!r}, aliases={sorted(aliases)!r}, owns_unit={lead.name in unit_owners}, has_interest={lead.name in interest_leads}",
+            )
+        if role not in CANONICAL_ROLES:
+            role = "Buyer"
+            summary["defaulted"] += 1
+        if reason in {
+            "unit_owner",
+            "lead_interest",
+            "relationship_conflict",
+        } and canonical != role:
+            summary["relationship_repairs"] += 1
+            if reason != "relationship_conflict":
                 _log_issue(
                     lead.name,
-                    f"kept canonical party_type={canonical!r}; ignored legacy aliases={sorted(aliases)!r}",
+                    f"repaired party_type from {canonical!r} to {role!r} using {reason} evidence",
                 )
-            if lead.party_type != canonical:
-                frappe.db.set_value(
-                    "CRM Lead",
-                    lead.name,
-                    "party_type",
-                    canonical,
-                    update_modified=False,
-                )
-                summary["updated"] += 1
-            continue
-
-        if len(aliases) == 1:
-            role = next(iter(aliases))
-            if raw_canonical and not canonical:
-                _log_issue(
-                    lead.name,
-                    f"repaired invalid party_type={raw_canonical!r} from unambiguous legacy role={role!r}",
-                )
+        if lead.party_type != role:
             frappe.db.set_value(
                 "CRM Lead",
                 lead.name,
@@ -109,28 +185,6 @@ def reconcile_party_roles():
                 update_modified=False,
             )
             summary["updated"] += 1
-            continue
-
-        if len(aliases) > 1:
-            summary["conflicts"] += 1
-            _log_issue(
-                lead.name,
-                f"conflicting legacy aliases={sorted(aliases)!r}; defaulted canonical Party Role to Buyer",
-            )
-        elif invalid_values:
-            _log_issue(
-                lead.name,
-                "no unambiguous recognized role remained; defaulted canonical Party Role to Buyer",
-            )
-
-        frappe.db.set_value(
-            "CRM Lead",
-            lead.name,
-            "party_type",
-            "Buyer",
-            update_modified=False,
-        )
-        summary["defaulted"] += 1
 
     return summary
 
@@ -239,5 +293,6 @@ def remove_legacy_role_metadata():
 def enforce_canonical_party_role_schema():
     """Idempotent install/upgrade entry point."""
     summary = reconcile_party_roles()
+    summary["view_routes_updated"] = _migrate_lead_view_routes()
     remove_legacy_role_metadata()
     return summary
