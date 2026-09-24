@@ -255,6 +255,8 @@ class SchemaContractTests(unittest.TestCase):
         self.assertIn("resolve_party_role(", migration_source)
         self.assertIn('"CRM View Settings"', migration_source)
         self.assertIn('"Buyers" if role == "Buyer" else "Sellers"', migration_source)
+        self.assertIn("def _clear_legacy_role_values", migration_source)
+        self.assertIn("_clear_legacy_role_values()", migration_source)
 
         showing_controller = (
             DOCTYPE_ROOT

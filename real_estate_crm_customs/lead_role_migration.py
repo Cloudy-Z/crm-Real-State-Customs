@@ -94,6 +94,19 @@ def _migrate_lead_view_routes():
     return updated
 
 
+def _clear_legacy_role_values():
+    for fieldname in LEGACY_ROLE_FIELDS:
+        if not frappe.db.has_column("CRM Lead", fieldname):
+            continue
+        Lead = frappe.qb.DocType("CRM Lead")
+        field = getattr(Lead, fieldname)
+        (
+            frappe.qb.update(Lead)
+            .set(field, None)
+            .where(field.isnotnull())
+        ).run()
+
+
 def reconcile_party_roles():
     """Populate the canonical field from the strongest available evidence."""
     summary = {
@@ -294,5 +307,6 @@ def enforce_canonical_party_role_schema():
     """Idempotent install/upgrade entry point."""
     summary = reconcile_party_roles()
     summary["view_routes_updated"] = _migrate_lead_view_routes()
+    _clear_legacy_role_values()
     remove_legacy_role_metadata()
     return summary
