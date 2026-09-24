@@ -13,6 +13,7 @@ PARTY_ROLE_ALIASES = {
     "sell": "Seller",
     "owner": "Seller",
 }
+LEGACY_ROLE_FILTER_FIELDS = ("custom_type", "lead_type")
 
 
 def normalize_party_role(value):
@@ -44,20 +45,46 @@ def resolve_party_role(canonical, aliases=(), *, owns_unit=False, has_interest=F
     return None, "missing"
 
 
-def party_role_from_view_filters(filters):
-    """Read a canonical Party Role from CRM View Settings filter JSON."""
+def normalize_lead_view_filters(filters):
+    """Replace legacy Lead role filters with the canonical ``party_type`` key."""
     if isinstance(filters, str):
         try:
             filters = json.loads(filters)
         except (TypeError, ValueError):
-            return None
+            return None, None, False
     if not isinstance(filters, dict):
-        return None
-    value = filters.get("party_type")
-    if isinstance(value, list):
-        value = value[-1] if value else None
-    role = normalize_party_role(value)
-    return role if value in {"Buyer", "Seller"} else None
+        return None, None, False
+
+    cleaned = dict(filters)
+    canonical_value = cleaned.get("party_type")
+    if isinstance(canonical_value, list):
+        canonical_value = canonical_value[-1] if canonical_value else None
+    role = (
+        canonical_value
+        if canonical_value in {"Buyer", "Seller"}
+        else None
+    )
+
+    for fieldname in LEGACY_ROLE_FILTER_FIELDS:
+        legacy_value = cleaned.pop(fieldname, None)
+        if role or legacy_value is None:
+            continue
+        if isinstance(legacy_value, list):
+            legacy_value = legacy_value[-1] if legacy_value else None
+        role = normalize_party_role(legacy_value)
+
+    if role:
+        cleaned["party_type"] = role
+    elif "party_type" in cleaned:
+        cleaned.pop("party_type")
+
+    return cleaned, role, cleaned != filters
+
+
+def party_role_from_view_filters(filters):
+    """Read a canonical Party Role from CRM View Settings filter JSON."""
+    _cleaned, role, _changed = normalize_lead_view_filters(filters)
+    return role
 
 
 def remove_fields_from_layout(layout, fieldnames):

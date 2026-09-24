@@ -12,7 +12,7 @@ import frappe
 
 from real_estate_crm_customs.party_roles import (
     normalize_party_role,
-    party_role_from_view_filters,
+    normalize_lead_view_filters,
     remove_fields_from_layout,
     remove_fields_from_quick_filters,
     resolve_party_role,
@@ -76,18 +76,22 @@ def _migrate_lead_view_routes():
     updated = 0
     for view in frappe.get_all(
         "CRM View Settings",
-        filters={"dt": "CRM Lead", "route_name": "Leads"},
-        fields=["name", "filters"],
+        filters={"dt": "CRM Lead"},
+        fields=["name", "filters", "route_name"],
         limit_page_length=0,
     ):
-        role = party_role_from_view_filters(view.filters)
-        if not role:
+        filters, role, filters_changed = normalize_lead_view_filters(view.filters)
+        values = {}
+        if filters_changed:
+            values["filters"] = json.dumps(filters, ensure_ascii=False)
+        if role and view.route_name == "Leads":
+            values["route_name"] = "Buyers" if role == "Buyer" else "Sellers"
+        if not values:
             continue
         frappe.db.set_value(
             "CRM View Settings",
             view.name,
-            "route_name",
-            "Buyers" if role == "Buyer" else "Sellers",
+            values,
             update_modified=False,
         )
         updated += 1

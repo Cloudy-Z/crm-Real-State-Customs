@@ -1,6 +1,7 @@
 import unittest
 
 from real_estate_crm_customs.party_roles import (
+    normalize_lead_view_filters,
     normalize_party_role,
     party_role_from_view_filters,
     remove_fields_from_layout,
@@ -53,7 +54,7 @@ class PartyRoleTests(unittest.TestCase):
         )
         self.assertEqual(resolve_party_role("", ()), (None, "missing"))
 
-    def test_reads_only_canonical_party_roles_from_saved_view_filters(self):
+    def test_normalizes_canonical_and_legacy_saved_view_role_filters(self):
         self.assertEqual(
             party_role_from_view_filters('{"party_type": "Buyer"}'),
             "Buyer",
@@ -62,9 +63,22 @@ class PartyRoleTests(unittest.TestCase):
             party_role_from_view_filters({"party_type": ["=", "Seller"]}),
             "Seller",
         )
-        self.assertIsNone(
-            party_role_from_view_filters({"party_type": "Owner"})
+        cleaned, role, changed = normalize_lead_view_filters(
+            '{"custom_type": "Buyer"}'
         )
+        self.assertEqual(cleaned, {"party_type": "Buyer"})
+        self.assertEqual(role, "Buyer")
+        self.assertTrue(changed)
+        cleaned, role, changed = normalize_lead_view_filters(
+            {"lead_type": "Seller", "status": "New"}
+        )
+        self.assertEqual(
+            cleaned,
+            {"party_type": "Seller", "status": "New"},
+        )
+        self.assertEqual(role, "Seller")
+        self.assertTrue(changed)
+        self.assertIsNone(party_role_from_view_filters({"party_type": "Owner"}))
         self.assertIsNone(party_role_from_view_filters("not-json"))
 
     def test_removes_aliases_from_flat_layout(self):
