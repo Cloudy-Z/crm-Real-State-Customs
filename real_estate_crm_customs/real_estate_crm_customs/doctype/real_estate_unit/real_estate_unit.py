@@ -6,6 +6,7 @@ from frappe.model.document import Document
 from frappe.utils import getdate, nowdate
 
 from real_estate_crm_customs.unit_financials import UnitFinancialError, calculate_unit_financials
+from real_estate_crm_customs.workflow_context import unit_mutation_active
 
 
 LEGACY_UNIT_TYPE_ABBREVIATIONS = {
@@ -45,6 +46,7 @@ class RealEstateUnit(Document):
             self.sku = generate_unit_sku(self)
 
     def validate(self):
+        validate_closing_state_mutation(self)
         validate_unit(self)
 
 
@@ -121,6 +123,22 @@ def validate_unit(doc):
         "rental_daily_rate",
     ):
         validate_rental_rates(doc)
+
+
+def validate_closing_state_mutation(doc):
+    """Closing reservation and sale links are controlled by the workflow service.
+
+    Unit creation remains unaffected. Existing ordinary edits cannot turn a
+    Unit Reserved/Sold or rewrite the Interest which owns that reservation.
+    """
+    if doc.is_new() or unit_mutation_active():
+        return
+    changed = _changed(doc, "status", "closing_interest", "sold_interest")
+    if changed:
+        frappe.throw(
+            _("Unit availability and closing links are managed only by the contract-closing workflow."),
+            frappe.PermissionError,
+        )
 
 
 def _changed(doc, *fieldnames):

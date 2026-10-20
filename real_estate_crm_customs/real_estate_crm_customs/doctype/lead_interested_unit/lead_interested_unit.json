@@ -28,6 +28,14 @@
   "requested_area",
   "requested_unit_type",
   "requested_budget",
+  "requested_budget_set",
+  "requested_down_payment_budget",
+  "requested_down_payment_budget_set",
+  "requested_monthly_installment_budget",
+  "requested_monthly_installment_budget_set",
+  "requested_delivery_date",
+  "inventory_search_scope",
+  "budget_currency",
   "requested_project",
   "requested_developer",
   "requested_finishing_type",
@@ -35,7 +43,8 @@
   "section_break_proposal",
   "proposal_status",
   "deletion_request_status",
-  "deletion_request"
+  "deletion_request",
+  "requirement_budget_presence_version"
  ],
  "fields": [
   {
@@ -195,33 +204,73 @@
    "depends_on": "eval:doc.interest_record_type == 'Request'",
    "fieldname": "requested_budget",
    "fieldtype": "Currency",
-   "label": "Requested Maximum Budget"
+   "label": "Requested Maximum Budget",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_down_payment_budget",
+   "fieldtype": "Currency",
+   "options": "budget_currency",
+   "label": "Requested Maximum Down Payment Budget",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_monthly_installment_budget",
+   "fieldtype": "Currency",
+   "options": "budget_currency",
+   "label": "Requested Maximum Monthly Installment Budget",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_delivery_date",
+   "fieldtype": "Date",
+   "label": "Preferred Delivery Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "inventory_search_scope",
+   "fieldtype": "Select",
+   "label": "Inventory Search Scope",
+   "options": "Resale\nPrimary\nBoth",
+   "read_only": 1
+  },
+  {
+   "fieldname": "budget_currency",
+   "fieldtype": "Link",
+   "label": "Budget Currency",
+   "options": "Currency",
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.interest_record_type == 'Request'",
    "fieldname": "requested_project",
    "fieldtype": "Link",
    "label": "Requested Compound",
-   "options": "Real Estate Project"
+   "options": "Real Estate Project",
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.interest_record_type == 'Request'",
    "fieldname": "requested_developer",
    "fieldtype": "Link",
    "label": "Requested Developer",
-   "options": "Property Developer"
+   "options": "Property Developer",
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.interest_record_type == 'Request'",
    "fieldname": "requested_finishing_type",
    "fieldtype": "Data",
-   "label": "Requested Finishing"
+   "label": "Requested Finishing",
+   "read_only": 1
   },
   {
    "depends_on": "eval:doc.interest_record_type == 'Request'",
    "fieldname": "requested_delivery_time",
    "fieldtype": "Data",
-   "label": "Requested Delivery Time"
+   "label": "Legacy Requested Delivery Time",
+   "read_only": 1,
+   "hidden": 1
   },
   {
    "fieldname": "section_break_proposal",
@@ -249,6 +298,38 @@
    "fieldtype": "Link",
    "label": "Deletion Approval Task",
    "options": "ToDo",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_budget_set",
+   "fieldtype": "Check",
+   "label": "Requested Budget Provided",
+   "default": "0",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_down_payment_budget_set",
+   "fieldtype": "Check",
+   "label": "Requested Down Payment Budget Provided",
+   "default": "0",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_monthly_installment_budget_set",
+   "fieldtype": "Check",
+   "label": "Requested Monthly Installment Budget Provided",
+   "default": "0",
+   "hidden": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "requirement_budget_presence_version",
+   "fieldtype": "Int",
+   "label": "Budget Presence Version",
+   "default": "0",
+   "hidden": 1,
    "read_only": 1
   }
  ],

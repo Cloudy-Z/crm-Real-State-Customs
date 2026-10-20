@@ -124,11 +124,14 @@
   "doctype": "Custom Field",
   "dt": "CRM Lead",
   "fieldname": "preferred_delivery_time",
-  "label": "Delivery Time",
+  "label": "Legacy Delivery Time",
   "fieldtype": "Data",
   "insert_after": "preferred_finishing_type",
   "depends_on": "eval:doc.party_type == 'Buyer'",
-  "name": "CRM Lead-preferred_delivery_time"
+  "name": "CRM Lead-preferred_delivery_time",
+  "hidden": 1,
+  "read_only": 1,
+  "description": "Legacy free-text date retained for migration review. Use Preferred Delivery Date."
  },
  {
   "doctype": "Custom Field",
@@ -276,5 +279,39 @@
   "options": "Email",
   "insert_after": "real_estate_agent_whatsapp_number",
   "name": "User-real_estate_agent_outreach_email"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "preferred_delivery_date",
+  "label": "Preferred Delivery Date",
+  "fieldtype": "Date",
+  "insert_after": "preferred_delivery_time",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-preferred_delivery_date",
+  "description": "Optional latest acceptable delivery date; canonical Date default for new requirement snapshots."
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "inventory_search_scope",
+  "label": "Inventory Search Scope",
+  "fieldtype": "Select",
+  "options": "Resale\nPrimary\nBoth",
+  "insert_after": "preferred_delivery_date",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-inventory_search_scope"
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "budget_currency",
+  "label": "Budget Currency",
+  "fieldtype": "Link",
+  "options": "Currency",
+  "insert_after": "inventory_search_scope",
+  "depends_on": "eval:doc.party_type == 'Buyer'",
+  "name": "CRM Lead-budget_currency",
+  "description": "Default currency for newly created requirement snapshots; existing Interest snapshots are unchanged."
  }
 ]

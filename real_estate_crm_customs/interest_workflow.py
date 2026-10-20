@@ -5,15 +5,24 @@ New workflow code uses Lead Interest records and relational action scopes.
 """
 
 import json
+from contextlib import nullcontext
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import getdate, now_datetime, nowdate
 
 from real_estate_crm_customs.migration_policy import (
     LegacyInterestDataError,
     normalize_legacy_interest_binding,
     parse_legacy_scope_identifiers,
+)
+from real_estate_crm_customs.requirement_policy import RequirementError, delivery_date
+from real_estate_crm_customs.workflow_context import (
+    creation_context_mode,
+    interest_creation_context,
+    interest_mutation_context,
+    require_interest_creation_context,
+    unit_mutation_context,
 )
 
 
@@ -22,7 +31,8 @@ LEAD_STATUS_FRESH = "Fresh Lead"
 LEAD_STATUS_REQUESTED = "Requested"
 LEAD_STATUS_OFFER_SENT = "Offer Sent"
 LEAD_STATUS_NEGOTIATING = "Negotiating"
-LEAD_STATUS_OFFER_SELECTED = "Offer Selected"
+LEAD_STATUS_CLOSING = "Closing"
+LEAD_STATUS_CLOSED_WON = "Closed Won"
 
 INTEREST_STATUSES = (
     "Requested",
@@ -34,12 +44,14 @@ INTEREST_STATUSES = (
     "Showing Scheduled",
     "Shown - Interested",
     "Shown - Considering",
+    "Closing",
+    "Closed Won",
     "Rejected",
     "Superseded",
     "Fulfilled",
     "Cancelled",
 )
-TERMINAL_INTEREST_STATUSES = {"Rejected", "Superseded", "Fulfilled", "Cancelled"}
+TERMINAL_INTEREST_STATUSES = {"Rejected", "Superseded", "Fulfilled", "Cancelled", "Closed Won"}
 ACTION_OPEN_STATUSES = ("Planned", "Due", "In Progress")
 
 ALLOWED_TRANSITIONS = {
@@ -47,11 +59,13 @@ ALLOWED_TRANSITIONS = {
     "Matched": {"Offer Sent", "Superseded", "Cancelled"},
     "Offer Sent": {"Offer Viewed", "Offer Accepted", "Rejected", "Superseded"},
     "Offer Viewed": {"Offer Accepted", "Rejected", "Superseded"},
-    "Offer Accepted": {"Negotiating", "Showing Scheduled", "Rejected", "Superseded"},
-    "Negotiating": {"Showing Scheduled", "Rejected", "Superseded"},
+    "Offer Accepted": {"Negotiating", "Showing Scheduled", "Closing", "Rejected", "Superseded"},
+    "Negotiating": {"Showing Scheduled", "Closing", "Rejected", "Superseded"},
     "Showing Scheduled": {"Shown - Interested", "Shown - Considering", "Negotiating", "Rejected"},
     "Shown - Considering": {"Negotiating", "Showing Scheduled", "Shown - Interested", "Rejected"},
-    "Shown - Interested": {"Negotiating", "Showing Scheduled", "Rejected"},
+    "Shown - Interested": {"Negotiating", "Showing Scheduled", "Closing", "Rejected"},
+    "Closing": {"Negotiating", "Rejected", "Closed Won"},
+    "Closed Won": set(),
     "Rejected": set(),
     "Superseded": set(),
     "Fulfilled": set(),
@@ -67,7 +81,9 @@ STATUS_RANK = {
     "Negotiating": 3,
     "Showing Scheduled": 3,
     "Shown - Considering": 3,
-    "Shown - Interested": 4,
+    "Shown - Interested": 3,
+    "Closing": 4,
+    "Closed Won": 5,
     "Rejected": -1,
     "Superseded": -1,
     "Fulfilled": -1,
@@ -81,6 +97,15 @@ LEGACY_COPY_FIELDS = (
     "requested_area",
     "requested_unit_type",
     "requested_budget",
+    "requested_budget_set",
+    "requested_down_payment_budget",
+    "requested_down_payment_budget_set",
+    "requested_monthly_installment_budget",
+    "requested_monthly_installment_budget_set",
+    "requested_delivery_date",
+    "inventory_search_scope",
+    "budget_currency",
+    "requirement_budget_presence_version",
     "requested_project",
     "requested_developer",
     "requested_finishing_type",
@@ -95,6 +120,28 @@ LEGACY_COPY_FIELDS = (
     "deletion_request_status",
     "deletion_request",
 )
+
+# Child-table fields were introduced at different times.  On an idempotent
+# migration rerun an old source row can therefore carry ``None`` simply
+# because that source did not yet have the new column.  A saved authoritative
+# snapshot must win over that absence; it is not a request to erase it.
+SNAPSHOT_COPY_FIELDS = {
+    "requested_destination",
+    "requested_unit_type",
+    "requested_budget",
+    "requested_budget_set",
+    "requested_down_payment_budget",
+    "requested_down_payment_budget_set",
+    "requested_monthly_installment_budget",
+    "requested_monthly_installment_budget_set",
+    "requested_delivery_date",
+    "inventory_search_scope",
+    "budget_currency",
+    "requirement_budget_presence_version",
+    "requested_project",
+    "requested_developer",
+    "requested_finishing_type",
+}
 
 
 def is_available():
@@ -172,6 +219,11 @@ def _legacy_interest_values(lead_doc, row):
     }
     for fieldname in LEGACY_COPY_FIELDS:
         values[fieldname] = row.get(fieldname)
+    if not row.get("requirement_budget_presence_version"):
+        for amount in ("requested_budget", "requested_down_payment_budget", "requested_monthly_installment_budget"):
+            raw = values.get(amount)
+            values[amount + "_set"] = int(raw is not None and float(raw) > 0)
+        values["requirement_budget_presence_version"] = 1
     if values["record_type"] == "Request" and not values.get("request_status"):
         values["request_status"] = "Open"
     return values
@@ -188,11 +240,18 @@ def ensure_interest_for_legacy_row(lead_doc, row, update_existing=False):
             for fieldname, value in values.items():
                 if fieldname in ("doctype", "workflow_status", "is_active", "last_transition_at", "last_transition_by"):
                     continue
+                if fieldname in SNAPSHOT_COPY_FIELDS:
+                    # The standalone snapshot is authoritative; a generated
+                    # compatibility mirror must never become its write source.
+                    continue
                 interest.set(fieldname, value)
             interest.save(ignore_permissions=True)
         return interest
-    interest = frappe.get_doc(values)
-    interest.insert(ignore_permissions=True)
+    # Backfill is the only non-action creation path.  The controller checks
+    # this request-local server context and never a submitted document flag.
+    with interest_creation_context("migration"):
+        interest = frappe.get_doc(values)
+        interest.insert(ignore_permissions=True)
     create_transition(
         interest,
         from_status=None,
@@ -205,6 +264,7 @@ def ensure_interest_for_legacy_row(lead_doc, row, update_existing=False):
 
 def create_interest(lead_doc, values, reason="Standalone Lead Interest created"):
     """Create the authoritative Interest first, then generate its legacy mirror."""
+    require_interest_creation_context()
     payload = dict(values or {})
     payload.update({"doctype": "Lead Interest", "lead": lead_doc.name})
     payload.setdefault("origin_lead_status", _origin_status(lead_doc))
@@ -462,34 +522,284 @@ def transition_interest(
     frappe.db.sql("SELECT `name` FROM `tabLead Interest` WHERE `name` = %s FOR UPDATE", (interest.name,))
     interest.reload()
     from_status = interest.workflow_status
+    if to_status in {"Closing", "Closed Won"} or from_status in {"Closing", "Closed Won"}:
+        frappe.throw(
+            _("Closing and Closed Won lifecycle changes must use the contract-closing workflow service."),
+            frappe.PermissionError,
+        )
     if from_status == to_status:
         if action:
-            interest.latest_action = action
-            interest.save(ignore_permissions=True)
+            with interest_mutation_context("standard_transition"):
+                interest.latest_action = action
+                interest.save(ignore_permissions=True)
         return interest
     if not force and to_status not in ALLOWED_TRANSITIONS.get(from_status, set()):
         frappe.throw(
             _("Lead Interest cannot move from {0} to {1}.").format(from_status, to_status),
             frappe.ValidationError,
         )
-    interest.workflow_status = to_status
-    interest.is_active = 0 if to_status in TERMINAL_INTEREST_STATUSES else 1
-    interest.latest_action = action
-    interest.last_transition_at = now_datetime()
-    interest.last_transition_by = frappe.session.user
-    if to_status == "Offer Sent" and not interest.offer_sent_at:
-        interest.offer_sent_at = now_datetime()
-    if interest.record_type == "Request":
-        if to_status == "Fulfilled":
-            interest.request_status = "Fulfilled"
-        elif to_status in {"Cancelled", "Superseded"}:
-            interest.request_status = "Cancelled"
-        elif to_status == "Requested":
-            interest.request_status = "Open"
-    interest.save(ignore_permissions=True)
+    with interest_mutation_context("standard_transition"):
+        interest.workflow_status = to_status
+        interest.is_active = 0 if to_status in TERMINAL_INTEREST_STATUSES else 1
+        interest.latest_action = action
+        interest.last_transition_at = now_datetime()
+        interest.last_transition_by = frappe.session.user
+        if to_status == "Offer Sent" and not interest.offer_sent_at:
+            interest.offer_sent_at = now_datetime()
+        if interest.record_type == "Request":
+            if to_status == "Fulfilled":
+                interest.request_status = "Fulfilled"
+            elif to_status in {"Cancelled", "Superseded"}:
+                interest.request_status = "Cancelled"
+            elif to_status == "Requested":
+                interest.request_status = "Open"
+        interest.save(ignore_permissions=True)
     create_transition(interest, from_status, to_status, action=action, outcome=outcome, reason=reason)
     if mirror_legacy:
         mirror_interest_to_legacy(interest)
+    return interest
+
+
+def _lock_unit(unit_name):
+    """Lock the Unit first, before its Interest, to avoid closing contention."""
+    rows = frappe.db.sql(
+        """
+        SELECT `name`, `status`, `inventory_type`, `owner_lead`, `closing_interest`, `sold_interest`
+        FROM `tabReal Estate Unit` WHERE `name` = %s FOR UPDATE
+        """,
+        (unit_name,),
+        as_dict=True,
+    )
+    if not rows:
+        frappe.throw(_("Real Estate Unit {0} was not found.").format(unit_name), frappe.DoesNotExistError)
+    return frappe._dict(rows[0])
+
+
+def _lock_interest(interest_name):
+    rows = frappe.db.sql(
+        "SELECT `name` FROM `tabLead Interest` WHERE `name` = %s FOR UPDATE",
+        (interest_name,),
+        as_dict=True,
+    )
+    if not rows:
+        frappe.throw(_("Lead Interest {0} was not found.").format(interest_name), frappe.DoesNotExistError)
+    return frappe.get_doc("Lead Interest", interest_name)
+
+
+def _interest_unit_name(interest_name):
+    unit = frappe.db.get_value("Lead Interest", interest_name, "unit")
+    if not unit:
+        frappe.throw(_("Contract closing requires a linked inventory Unit."), frappe.ValidationError)
+    return unit
+
+
+def _validate_closing_binding(interest, unit):
+    """Recheck buyer/category/owner constraints under the unit lock."""
+    if interest.record_type != "Inventory Unit" or not interest.unit:
+        frappe.throw(_("Contract closing requires one inventory Interest linked to a Unit."), frappe.ValidationError)
+    if interest.category not in {"Resale", "Primary"}:
+        frappe.throw(_("Contract closing is available only for Resale or Primary inventory."), frappe.ValidationError)
+    if interest.unit != unit.name or unit.inventory_type != interest.category:
+        frappe.throw(_("The Interest no longer matches its linked Unit."), frappe.ValidationError)
+    if frappe.db.get_value("CRM Lead", interest.lead, "party_type") != "Buyer":
+        frappe.throw(_("Only a Buyer Interest can enter contract closing."), frappe.ValidationError)
+    if interest.category == "Resale":
+        owner_role = frappe.db.get_value("CRM Lead", unit.owner_lead, "party_type") if unit.owner_lead else None
+        if owner_role != "Seller":
+            frappe.throw(_("Resale contract closing requires a Seller-owned Unit."), frappe.ValidationError)
+    elif unit.owner_lead:
+        frappe.throw(_("Primary contract closing cannot use a Seller-owned Unit."), frappe.ValidationError)
+
+
+def _set_unit_closing_state(unit_name, *, status, closing_interest=None, sold_interest=None):
+    """Write only the system-owned reservation fields while the Unit lock is held."""
+    with unit_mutation_context("contract_closing"):
+        frappe.db.set_value(
+            "Real Estate Unit",
+            unit_name,
+            {
+                "status": status,
+                "closing_interest": closing_interest,
+                "sold_interest": sold_interest,
+            },
+            update_modified=False,
+        )
+
+
+def _touch_closing_interest(interest, action=None):
+    if action and interest.latest_action != action:
+        interest.latest_action = action
+        interest.last_transition_at = now_datetime()
+        interest.last_transition_by = frappe.session.user
+        interest.save(ignore_permissions=True)
+
+
+def begin_interest_closing(interest_name, action=None):
+    """Reserve one Available Unit and move exactly its Interest into Closing.
+
+    Lock ordering is Unit then Interest.  The same Interest may replay an
+    already-held reservation, but no other buyer's closing/sold Unit is ever
+    changed by this service.
+    """
+    unit_name = _interest_unit_name(interest_name)
+    unit = _lock_unit(unit_name)
+    interest = _lock_interest(interest_name)
+    _validate_closing_binding(interest, unit)
+
+    if interest.workflow_status == "Closed Won":
+        if unit.status == "Sold" and unit.sold_interest == interest.name and _has_closed_won_evidence(interest):
+            return interest
+        frappe.throw(_("A Closed Won Interest cannot be returned to Closing."), frappe.ValidationError)
+    if interest.workflow_status == "Closing":
+        if unit.status == "Reserved" and unit.closing_interest == interest.name:
+            with interest_mutation_context("contract_closing"):
+                _touch_closing_interest(interest, action)
+            return interest
+        frappe.throw(_("Closing Interest no longer owns the Unit reservation."), frappe.ValidationError)
+    if interest.workflow_status not in {"Offer Accepted", "Negotiating", "Shown - Interested"}:
+        frappe.throw(_("Only agreed inventory Interests can enter Closing."), frappe.ValidationError)
+    if unit.status != "Available":
+        frappe.throw(_("This Unit is sold or reserved by another closing."), frappe.ValidationError)
+    if unit.closing_interest or unit.sold_interest:
+        frappe.throw(_("This Unit has inconsistent existing closing links and requires review."), frappe.ValidationError)
+
+    with interest_mutation_context("contract_closing"):
+        from_status = interest.workflow_status
+        interest.workflow_status = "Closing"
+        interest.is_active = 1
+        interest.latest_action = action
+        interest.last_transition_at = now_datetime()
+        interest.last_transition_by = frappe.session.user
+        interest.save(ignore_permissions=True)
+    _set_unit_closing_state(unit.name, status="Reserved", closing_interest=interest.name, sold_interest=None)
+    create_transition(
+        interest,
+        from_status,
+        "Closing",
+        action=action,
+        outcome="Begin Closing",
+        reason="Unit reserved for contract signing",
+    )
+    mirror_interest_to_legacy(interest)
+    return interest
+
+
+def _normalized_contract_evidence(contract_reference, contract_signed_date):
+    reference = str(contract_reference or "").strip()
+    if not reference:
+        frappe.throw(_("Contract reference is required to record Closed Won."), frappe.ValidationError)
+    try:
+        signed = delivery_date(contract_signed_date)
+    except RequirementError as exc:
+        frappe.throw(_(str(exc)), frappe.ValidationError)
+    if not signed:
+        frappe.throw(_("Actual contract signed date is required to record Closed Won."), frappe.ValidationError)
+    if getdate(signed) > getdate(nowdate()):
+        frappe.throw(_("Contract signed date cannot be in the future."), frappe.ValidationError)
+    return reference, signed
+
+
+def _assert_contract_replay_matches(interest, reference, signed_date, signed_contract):
+    if not _has_closed_won_evidence(interest):
+        frappe.throw(_("Closed Won record has incomplete evidence and requires manager review."), frappe.ValidationError)
+    if interest.contract_reference != reference or str(interest.contract_signed_date) != signed_date:
+        frappe.throw(_("Contract finalization conflicts with already-recorded evidence."), frappe.ValidationError)
+    if signed_contract is not None and interest.get("signed_contract") != signed_contract:
+        frappe.throw(_("Contract finalization conflicts with the already-recorded attachment."), frappe.ValidationError)
+
+
+def finalize_interest_contract(interest_name, contract_reference, contract_signed_date, signed_contract=None, action=None):
+    """Record immutable signed evidence and atomically mark the reserved Unit Sold."""
+    reference, signed_date = _normalized_contract_evidence(contract_reference, contract_signed_date)
+    unit_name = _interest_unit_name(interest_name)
+    unit = _lock_unit(unit_name)
+    interest = _lock_interest(interest_name)
+    _validate_closing_binding(interest, unit)
+
+    if interest.workflow_status == "Closed Won":
+        _assert_contract_replay_matches(interest, reference, signed_date, signed_contract)
+        if unit.status != "Sold" or unit.sold_interest != interest.name:
+            frappe.throw(_("Closed Won Interest no longer owns the sold Unit record."), frappe.ValidationError)
+        return interest
+    if interest.workflow_status != "Closing":
+        frappe.throw(_("Only an Interest in Closing can record a signed contract."), frappe.ValidationError)
+    if unit.status != "Reserved" or unit.closing_interest != interest.name or unit.sold_interest:
+        frappe.throw(_("The Unit is not reserved by this Closing Interest."), frappe.ValidationError)
+
+    with interest_mutation_context("contract_closing"):
+        from_status = interest.workflow_status
+        interest.workflow_status = "Closed Won"
+        interest.is_active = 0
+        interest.latest_action = action
+        interest.last_transition_at = now_datetime()
+        interest.last_transition_by = frappe.session.user
+        interest.contract_reference = reference
+        interest.contract_signed_date = signed_date
+        if signed_contract is not None:
+            interest.signed_contract = signed_contract
+        interest.contract_recorded_by = frappe.session.user
+        interest.closed_won_at = now_datetime()
+        interest.save(ignore_permissions=True)
+    _set_unit_closing_state(
+        unit.name,
+        status="Sold",
+        closing_interest=interest.name,
+        sold_interest=interest.name,
+    )
+    create_transition(
+        interest,
+        from_status,
+        "Closed Won",
+        action=action,
+        outcome="Contract Signed",
+        reason="Signed contract evidence recorded",
+    )
+    mirror_interest_to_legacy(interest)
+    return interest
+
+
+def abandon_interest_closing(interest_name, target="Negotiating", action=None, reason=None):
+    """Leave Closing and release only this Interest's own reservation."""
+    if target not in {"Negotiating", "Rejected"}:
+        frappe.throw(_("Closing can return only to Negotiating or Rejected."), frappe.ValidationError)
+    unit_name = _interest_unit_name(interest_name)
+    unit = _lock_unit(unit_name)
+    interest = _lock_interest(interest_name)
+    _validate_closing_binding(interest, unit)
+    if interest.workflow_status == target:
+        # Safe replay after a successful abandon must prove the previous call
+        # released this exact hold.  Quietly accepting a stale Reserved/Sold
+        # link could otherwise conceal a Unit reservation that this flow no
+        # longer owns.
+        if unit.status == "Available" and not unit.closing_interest and not unit.sold_interest:
+            return interest
+        frappe.throw(
+            _("Closing cancellation replay found an inconsistent Unit reservation."),
+            frappe.ValidationError,
+        )
+    if interest.workflow_status != "Closing":
+        frappe.throw(_("Only an Interest in Closing can abandon contract signing."), frappe.ValidationError)
+    if unit.status != "Reserved" or unit.closing_interest != interest.name or unit.sold_interest:
+        frappe.throw(_("The Unit reservation is not owned by this Closing Interest."), frappe.ValidationError)
+
+    with interest_mutation_context("contract_closing"):
+        from_status = interest.workflow_status
+        interest.workflow_status = target
+        interest.is_active = 0 if target in TERMINAL_INTEREST_STATUSES else 1
+        interest.latest_action = action
+        interest.last_transition_at = now_datetime()
+        interest.last_transition_by = frappe.session.user
+        interest.save(ignore_permissions=True)
+    _set_unit_closing_state(unit.name, status="Available", closing_interest=None, sold_interest=None)
+    create_transition(
+        interest,
+        from_status,
+        target,
+        action=action,
+        outcome="Closing Abandoned",
+        reason=reason or "Contract signing did not complete",
+    )
+    mirror_interest_to_legacy(interest)
     return interest
 
 
@@ -518,7 +828,10 @@ def mirror_interest_to_legacy(interest):
         if row.meta.has_field(fieldname):
             row.set(fieldname, interest.get(fieldname))
     status = interest.workflow_status
-    row.unit_interest_status = "Lost Interest" if status in TERMINAL_INTEREST_STATUSES else "Active"
+    # A signed sale is terminal for the workflow but must remain visibly
+    # successful in the legacy compatibility mirror, not be presented as a
+    # generic lost interest.
+    row.unit_interest_status = "Lost Interest" if status in (TERMINAL_INTEREST_STATUSES - {"Closed Won"}) else "Active"
     row.offer_sent = int(status in {
         "Offer Sent",
         "Offer Viewed",
@@ -527,6 +840,8 @@ def mirror_interest_to_legacy(interest):
         "Showing Scheduled",
         "Shown - Interested",
         "Shown - Considering",
+        "Closing",
+        "Closed Won",
     })
     row.offer_sent_at = interest.offer_sent_at
     proposal_map = {
@@ -538,13 +853,19 @@ def mirror_interest_to_legacy(interest):
         "Showing Scheduled": "Offer Accepted",
         "Shown - Interested": "Offer Accepted",
         "Shown - Considering": "Offer Accepted",
+        "Closing": "Offer Accepted",
+        "Closed Won": "Offer Accepted",
         "Rejected": "Rejected",
         "Superseded": "Rejected",
     }
     if status in proposal_map:
         row.proposal_status = proposal_map[status]
     lead_doc.flags.real_estate_status_transition = True
-    lead_doc.save(ignore_permissions=True)
+    # This is only the generated compatibility child-row mirror.  It is never
+    # a client-supplied creation authorization and remains tightly scoped to
+    # the internal save that can append a missing legacy row.
+    with interest_creation_context("migration"):
+        lead_doc.save(ignore_permissions=True)
     if row.name and interest.get("legacy_child_row") != row.name:
         frappe.db.set_value(
             "Lead Interest",
@@ -691,16 +1012,31 @@ def update_action_scope_results(action, outcome=None):
 
 
 def _rollup_target(interests, origin_status):
+    # Closed Won is terminal, so it must be tested *before* terminal rows are
+    # excluded.  A bare status is not enough: historical/imported rows must
+    # have the approved signed-contract evidence.
+    if any(_has_closed_won_evidence(row) for row in interests):
+        return LEAD_STATUS_CLOSED_WON
     active = [row for row in interests if row.workflow_status not in TERMINAL_INTEREST_STATUSES]
-    if any(row.workflow_status == "Shown - Interested" for row in active):
-        return LEAD_STATUS_OFFER_SELECTED
-    if any(row.workflow_status in {"Offer Accepted", "Negotiating", "Showing Scheduled", "Shown - Considering"} for row in active):
+    if any(row.workflow_status == "Closing" for row in active):
+        return LEAD_STATUS_CLOSING
+    if any(row.workflow_status in {"Offer Accepted", "Negotiating", "Showing Scheduled", "Shown - Considering", "Shown - Interested"} for row in active):
         return LEAD_STATUS_NEGOTIATING
     if any(row.workflow_status in {"Offer Sent", "Offer Viewed"} for row in active):
         return LEAD_STATUS_OFFER_SENT
     if any(row.workflow_status == "Requested" for row in active):
         return LEAD_STATUS_REQUESTED
     return origin_status
+
+
+def _has_closed_won_evidence(interest):
+    return bool(
+        interest.workflow_status == "Closed Won"
+        and str(interest.get("contract_reference") or "").strip()
+        and interest.get("contract_signed_date")
+        and interest.get("contract_recorded_by")
+        and interest.get("closed_won_at")
+    )
 
 
 def _validate_rollup_interests(interests):
@@ -953,6 +1289,11 @@ def migrate_showing_and_negotiation_facts():
                 skipped += 1
                 continue
             if interest.workflow_status == target:
+                continue
+            if interest.workflow_status == "Closing" or interest.workflow_status in TERMINAL_INTEREST_STATUSES:
+                # Historical fact replay cannot supersede a later terminal
+                # decision or a verified contract-closing workflow.
+                skipped += 1
                 continue
             savepoint = f"action_fact_{action_index}_{interest_index}"
             frappe.db.savepoint(savepoint)

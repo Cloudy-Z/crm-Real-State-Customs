@@ -42,12 +42,14 @@ LEAD_EVENT_LAYOUT_FIELDS = []  # Deprecated: event tracking now uses native Even
 LEAD_REAL_ESTATE_LAYOUT_FIELDS = [
     "party_type",
     "buyer_budget",
+    "budget_currency",
+    "inventory_search_scope",
     "preferred_unit_type",
     "preferred_destination",
     "preferred_developer",
     "preferred_compound",
     "preferred_finishing_type",
-    "preferred_delivery_time",
+    "preferred_delivery_date",
 ]
 
 LEAD_CALL_FLAGS_LAYOUT_FIELDS = [
@@ -477,6 +479,11 @@ def sync_real_estate_crm_defaults():
     setup_real_estate_client_scripts()
     setup_crm_portal_defaults()
     migrate_standalone_lead_interests()
+    # Post-model patches precede fixture Custom Field columns. Re-run the
+    # idempotent data patch after fields and standalone promotion are available.
+    from real_estate_crm_customs.patches.v16_0.closing_requirements_and_meetings import execute
+
+    execute()
 
 
 def migrate_standalone_lead_interests():
@@ -594,13 +601,23 @@ def ensure_real_estate_lead_statuses():
         {"lead_status": "Requested", "type": "Ongoing", "color": "orange", "position": 20},
         {"lead_status": "Offer Sent", "type": "Ongoing", "color": "blue", "position": 30},
         {"lead_status": "Negotiating", "type": "Ongoing", "color": "yellow", "position": 40},
-        {"lead_status": "Offer Selected", "type": "Ongoing", "color": "green", "position": 50},
+        # Offer Selected is retained if historic CRM metadata uses it, but is
+        # never created as a current rollup target.
+        {"lead_status": "Closing", "type": "Ongoing", "color": "orange", "position": 50},
+        {"lead_status": "Closed Won", "type": "Won", "color": "green", "position": 60},
     ]
     for status in statuses:
         if frappe.db.exists("CRM Lead Status", status["lead_status"]):
+            doc = frappe.get_doc("CRM Lead Status", status["lead_status"])
+            changed = False
+            for fieldname in ("type", "color", "position"):
+                if doc.get(fieldname) != status[fieldname]:
+                    doc.set(fieldname, status[fieldname])
+                    changed = True
+            if changed:
+                doc.save(ignore_permissions=True)
             continue
-        doc = frappe.get_doc({"doctype": "CRM Lead Status", **status})
-        doc.insert(ignore_permissions=True)
+        frappe.get_doc({"doctype": "CRM Lead Status", **status}).insert(ignore_permissions=True)
 
 
 def enforce_crm_lead_phone_mandatory():

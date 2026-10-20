@@ -9,6 +9,7 @@
     "lead",
     "action_type",
     "purpose",
+    "meeting_review_status",
     "workflow_status",
     "is_required",
     "scope_type",
@@ -51,7 +52,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Action Type",
-      "options": "Call\nAdd Interest\nMeeting\nShowing\nSend Offer\nOffer Decision\nNegotiation Follow-up",
+      "options": "Call\nAdd Interest\nMeeting\nShowing\nSend Offer\nOffer Decision\nNegotiation Follow-up\nClosing",
       "reqd": 1
     },
     {
@@ -59,7 +60,15 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Purpose",
-      "options": "\nInitial Qualification\nRequirements Discovery\nMeeting Confirmation\nShowing Confirmation\nOffer Follow-up\nOffer Decision\nNegotiation Follow-up\nGeneral Follow-up\nGeneral Meeting\nExplore Meeting\nMeeting with Owner\nDiscovery Meeting\nOffer Review\nNegotiation Meeting\nMatch Requested Unit"
+      "options": "\nInitial Qualification\nRequirements Discovery\nMeeting Confirmation\nShowing Confirmation\nOffer Follow-up\nOffer Decision\nNegotiation Follow-up\nGeneral Follow-up\nExplore Meeting\nOwner Meeting\nDeveloper Meeting\nContract Signing\nMatch Requested Unit\nGeneral Meeting\nMeeting with Owner\nDiscovery Meeting\nOffer Review\nNegotiation Meeting"
+    },
+    {
+      "fieldname": "meeting_review_status",
+      "fieldtype": "Select",
+      "label": "Legacy Meeting Review",
+      "options": "\nNeeds Review/Replan",
+      "read_only": 1,
+      "description": "Open retired-purpose meeting retained for agent review; it was not silently cancelled or repurposed."
     },
     {
       "default": "Planned",
