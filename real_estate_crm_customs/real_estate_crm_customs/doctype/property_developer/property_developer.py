@@ -3,19 +3,27 @@ from datetime import date
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import getdate
+
+
+# Founded In (fieldname kept as ``founded_year`` for compatibility) is an
+# optional Date. Historical whole-year values are migrated to 1 January of that
+# year by the pre-model patch ``convert_developer_founded_year_to_date``.
+MIN_FOUNDED_DATE = date(1700, 1, 1)
 
 
 class PropertyDeveloper(Document):
     def validate(self):
-        if self.is_new() and not self.founded_year:
-            frappe.throw(_("Founded In is mandatory for a new Developer."), frappe.ValidationError)
         if self.is_new() and not self.founders:
             frappe.throw(_("A Developer requires at least one founder."), frappe.ValidationError)
         if self.founded_year:
-            current_year = date.today().year
-            if int(self.founded_year) < 1700 or int(self.founded_year) > current_year:
+            founded = getdate(self.founded_year)
+            today = getdate()
+            if founded < MIN_FOUNDED_DATE or founded > today:
                 frappe.throw(
-                    _("Founded In must be between 1700 and {0}.").format(current_year),
+                    _("Founded In must be between {0} and {1}.").format(
+                        MIN_FOUNDED_DATE.isoformat(), today.isoformat()
+                    ),
                     frappe.ValidationError,
                 )
         founder_names = [

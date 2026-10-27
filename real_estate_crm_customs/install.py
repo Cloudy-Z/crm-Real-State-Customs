@@ -371,7 +371,7 @@ REAL_ESTATE_STANDARD_VIEWS = [
         "icon": "building",
         "columns": [
             {"label": "Developer Name", "type": "Data", "key": "developer_name", "width": "16rem"},
-            {"label": "Founded In", "type": "Int", "key": "founded_year", "width": "10rem"},
+            {"label": "Founded In", "type": "Date", "key": "founded_year", "width": "10rem"},
             {"label": "Company Registration", "type": "Data", "key": "company_registration", "width": "16rem"},
             {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
         ],
