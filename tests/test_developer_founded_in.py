@@ -75,7 +75,7 @@ def load_developer_class():
     nodes = [
         node
         for node in module.body
-        if isinstance(node, (ast.ClassDef, ast.Assign))
+        if isinstance(node, (ast.ClassDef, ast.Assign, ast.FunctionDef))
     ]
     compiled = ast.Module(body=nodes, type_ignores=[])
     ast.fix_missing_locations(compiled)
@@ -87,6 +87,12 @@ def load_developer_class():
 
         def is_new(self):
             return self._new
+
+        def get(self, key, default=None):
+            return self.__dict__.get(key, default)
+
+        def set(self, key, value):
+            self.__dict__[key] = value
 
     def getdate(value=None):
         if value is None:
@@ -107,8 +113,10 @@ def load_developer_class():
 
 
 class Founder:
-    def __init__(self, founder_name):
+    def __init__(self, founder_name=None, role_title=None, idx=None):
         self.founder_name = founder_name
+        self.role_title = role_title
+        self.idx = idx
 
 
 class DoctypeJsonStrictParseTests(unittest.TestCase):
@@ -130,6 +138,22 @@ class DeveloperFoundedInSchemaTests(unittest.TestCase):
         self.assertEqual(self.field["fieldtype"], "Date")
         self.assertEqual(self.field["label"], "Founded In")
         self.assertFalse(self.field.get("reqd"))
+
+    def test_developer_name_is_the_only_mandatory_field(self):
+        required = [f["fieldname"] for f in self.schema["fields"] if f.get("reqd")]
+        self.assertEqual(required, ["developer_name"])
+        for field in self.schema["fields"]:
+            self.assertFalse(field.get("mandatory_depends_on"), field["fieldname"])
+
+    def test_founder_child_table_has_no_mandatory_fields(self):
+        founder = strict_json_load(
+            DOCTYPE_ROOT / "property_developer_founder" / "property_developer_founder.json"
+        )
+        self.assertEqual(founder.get("istable"), 1)
+        for field in founder["fields"]:
+            with self.subTest(field=field["fieldname"]):
+                self.assertFalse(field.get("reqd"))
+                self.assertFalse(field.get("mandatory_depends_on"))
 
     def test_conversion_patch_runs_before_model_sync(self):
         parser = configparser.ConfigParser(allow_no_value=True, delimiters="\n")
@@ -170,14 +194,36 @@ class DeveloperControllerTests(unittest.TestCase):
                 with self.assertRaises(FakeValidationError):
                     doc.validate()
 
-    def test_founder_rules_are_unchanged(self):
-        with self.assertRaises(FakeValidationError):
-            self.Developer(founded_year=None, founders=[]).validate()
+    def test_new_developer_with_only_a_name_is_accepted(self):
+        for founders in ([], None):
+            with self.subTest(founders=founders):
+                self.Developer(developer_name="Only Name", founded_year=None, founders=founders).validate()
+
+    def test_founder_row_without_name_is_accepted(self):
+        doc = self.Developer(founded_year=None, founders=[Founder(role_title="Chairman")])
+        doc.validate()
+        self.assertEqual(len(doc.founders), 1)
+
+    def test_completely_empty_founder_rows_are_dropped_and_renumbered(self):
+        doc = self.Developer(
+            founded_year=None,
+            founders=[Founder(" ", None, 1), Founder("Ali", "CEO", 2), Founder(None, "", 3)],
+        )
+        doc.validate()
+        self.assertEqual([row.founder_name for row in doc.founders], ["Ali"])
+        self.assertEqual([row.idx for row in doc.founders], [1])
+
+    def test_duplicate_founder_names_are_still_rejected(self):
         with self.assertRaises(FakeValidationError):
             self.Developer(
                 founded_year=None,
                 founders=[Founder("Ali  Hassan"), Founder("ali hassan")],
             ).validate()
+
+    def test_controller_no_longer_requires_founders(self):
+        source = DEVELOPER_CONTROLLER.read_text()
+        self.assertNotIn("requires at least one founder", source)
+        self.assertNotIn("Founded In is mandatory", source)
 
 
 class FoundedYearConversionTests(unittest.TestCase):
