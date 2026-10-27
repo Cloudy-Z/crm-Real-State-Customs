@@ -1,5 +1,6 @@
 {
   "actions": [],
+  "allow_import": 1,
   "allow_rename": 1,
   "creation": "2026-05-29 00:00:00.000000",
   "doctype": "DocType",
@@ -443,7 +444,7 @@
     }
   ],
   "links": [],
-  "modified": "2026-09-19 00:00:00.000000",
+  "modified": "2026-10-27 18:30:00.000000",
   "modified_by": "Administrator",
   "module": "Real Estate CRM Customs",
   "name": "Real Estate Unit",
@@ -454,6 +455,7 @@
       "delete": 1,
       "email": 1,
       "export": 1,
+      "import": 1,
       "print": 1,
       "read": 1,
       "report": 1,
@@ -465,6 +467,7 @@
       "create": 1,
       "email": 1,
       "export": 1,
+      "import": 1,
       "print": 1,
       "read": 1,
       "report": 1,
@@ -485,5 +488,7 @@
   ],
   "sort_field": "modified",
   "sort_order": "DESC",
-  "states": []
+  "states": [],
+  "track_changes": 1,
+  "track_views": 1
 }

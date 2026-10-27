@@ -1,5 +1,6 @@
 {
   "actions": [],
+  "allow_import": 1,
   "allow_rename": 1,
   "autoname": "field:destination_name",
   "creation": "2026-09-19 00:00:00.000000",
@@ -48,7 +49,7 @@
       "link_fieldname": "destination"
     }
   ],
-  "modified": "2026-09-19 00:00:00.000000",
+  "modified": "2026-10-27 18:30:00.000000",
   "modified_by": "Administrator",
   "module": "Real Estate CRM Customs",
   "name": "Real Estate Destination",
@@ -59,6 +60,7 @@
       "delete": 1,
       "email": 1,
       "export": 1,
+      "import": 1,
       "print": 1,
       "read": 1,
       "report": 1,
@@ -70,6 +72,7 @@
       "create": 1,
       "email": 1,
       "export": 1,
+      "import": 1,
       "print": 1,
       "read": 1,
       "report": 1,

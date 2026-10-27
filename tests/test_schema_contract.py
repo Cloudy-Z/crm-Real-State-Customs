@@ -336,6 +336,38 @@ class SchemaContractTests(unittest.TestCase):
         self.assertTrue(expected <= {view["dt"] for view in views})
         self.assertTrue(expected <= set(filters))
 
+    def test_master_doctype_import_and_audit_settings(self):
+        masters = {
+            "real_estate_unit": {"track_changes": 1, "track_views": 1},
+            "real_estate_project": {"track_changes": 1, "track_views": 0},
+            "property_developer": {"track_changes": 0, "track_views": 0},
+            "real_estate_destination": {"track_changes": 0, "track_views": 0},
+            "real_estate_unit_type": {"track_changes": 0, "track_views": 0},
+            "real_estate_amenity": {"track_changes": 0, "track_views": 0},
+        }
+        for folder, tracking in masters.items():
+            with self.subTest(doctype=folder):
+                doctype = load_doctype(folder)
+                self.assertEqual(doctype.get("allow_import"), 1)
+                for setting, expected in tracking.items():
+                    self.assertEqual(int(doctype.get(setting) or 0), expected)
+                import_roles = {
+                    permission["role"]
+                    for permission in doctype["permissions"]
+                    if permission.get("import")
+                }
+                self.assertEqual(import_roles, {"System Manager", "Sales Manager"})
+
+    def test_workflow_and_audit_doctypes_are_not_importable(self):
+        for folder in (
+            "lead_interest",
+            "lead_interest_transition",
+            "lead_action_execution",
+            "lead_status_transition",
+        ):
+            with self.subTest(doctype=folder):
+                self.assertFalse(load_doctype(folder).get("allow_import"))
+
 
 if __name__ == "__main__":
     unittest.main()
