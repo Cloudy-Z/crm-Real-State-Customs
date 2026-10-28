@@ -9,9 +9,11 @@
     "general_information_section",
     "unit_number",
     "project",
+    "master_compound",
     "destination",
     "developer",
     "inventory_type",
+    "unit_category",
     "physical_unit_type",
     "unit_type",
     "column_break_general",
@@ -84,7 +86,18 @@
       "in_standard_filter": 1,
       "label": "Compound",
       "options": "Real Estate Project",
-      "reqd": 1
+      "reqd": 1,
+      "description": "Select the Compound, or the specific Phase inside it."
+    },
+    {
+      "description": "The top-level Compound. For a Unit in a Phase this is the Phase's Parent Compound.",
+      "fieldname": "master_compound",
+      "fieldtype": "Link",
+      "in_standard_filter": 1,
+      "label": "Master Compound",
+      "options": "Real Estate Project",
+      "read_only": 1,
+      "search_index": 1
     },
     {
       "fetch_from": "project.destination",
@@ -114,6 +127,15 @@
       "label": "Inventory Type",
       "options": "Rental\nResale\nPrimary\nInternational",
       "reqd": 1
+    },
+    {
+      "description": "Optional filter for Unit Type. It is always synced from the selected Unit Type when saved.",
+      "fetch_from": "physical_unit_type.unit_category",
+      "fieldname": "unit_category",
+      "fieldtype": "Link",
+      "in_standard_filter": 1,
+      "label": "Unit Category",
+      "options": "Real Estate Unit Category"
     },
     {
       "fieldname": "physical_unit_type",
@@ -444,7 +466,7 @@
     }
   ],
   "links": [],
-  "modified": "2026-10-27 18:30:00.000000",
+  "modified": "2026-10-28 16:00:00.000000",
   "modified_by": "Administrator",
   "module": "Real Estate CRM Customs",
   "name": "Real Estate Unit",

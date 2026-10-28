@@ -6,7 +6,7 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from real_estate_crm_customs.lead_role_migration import (
     enforce_canonical_party_role_schema,
 )
-from real_estate_crm_customs.master_data import ensure_default_unit_types
+from real_estate_crm_customs.master_data import ensure_default_unit_categories, ensure_default_unit_types
 
 
 def _fixture_custom_field_definitions(*doctypes):
@@ -174,9 +174,9 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "label": "Compound Information",
                 "name": "compound_section",
                 "columns": [
-                    {"name": "column_compound_a", "fields": ["project_name", "developer", "destination"]},
-                    {"name": "column_compound_b", "fields": ["status", "compound_area", "compound_area_unit"]},
-                    {"name": "column_compound_c", "fields": ["available_unit_types", "phases", "amenities", "master_plan", "description"]},
+                    {"name": "column_compound_a", "fields": ["project_name", "record_type", "parent_compound", "developer", "destination"]},
+                    {"name": "column_compound_b", "fields": ["status", "compound_area", "compound_area_unit", "source_url"]},
+                    {"name": "column_compound_c", "fields": ["available_unit_types", "amenities", "master_plan", "description"]},
                 ],
             }
         ],
@@ -189,7 +189,7 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "label": "General Information",
                 "name": "unit_general_section",
                 "columns": [
-                    {"name": "column_unit_a", "fields": ["unit_number", "project", "destination", "developer", "inventory_type", "physical_unit_type"]},
+                    {"name": "column_unit_a", "fields": ["unit_number", "project", "master_compound", "destination", "developer", "inventory_type", "unit_category", "physical_unit_type"]},
                     {"name": "column_unit_b", "fields": ["floor", "number_of_floors", "bua", "area_uom", "land_area", "garden_area", "roof_area", "terrace_area"]},
                     {"name": "column_unit_c", "fields": ["bedrooms", "bathrooms", "has_nanny_room", "has_driver_room", "has_storage_room", "has_parking", "finishing_type", "delivery_date", "delivery_status", "status", "owner_lead"]},
                 ],
@@ -213,7 +213,7 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "name": "unit_summary_section",
                 "opened": True,
                 "columns": [
-                    {"name": "column_unit_summary", "fields": ["unit_number", "sku", "project", "destination", "developer", "inventory_type", "physical_unit_type", "status", "delivery_status", "total_gross", "owner_lead"]}
+                    {"name": "column_unit_summary", "fields": ["unit_number", "sku", "project", "master_compound", "destination", "developer", "inventory_type", "unit_category", "physical_unit_type", "status", "delivery_status", "total_gross", "owner_lead"]}
                 ],
             }
         ],
@@ -227,7 +227,7 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "name": "unit_general_data_section",
                 "opened": True,
                 "columns": [
-                    {"name": "column_unit_data_a", "fields": ["unit_number", "sku", "project", "destination", "developer", "inventory_type", "physical_unit_type"]},
+                    {"name": "column_unit_data_a", "fields": ["unit_number", "sku", "project", "master_compound", "destination", "developer", "inventory_type", "unit_category", "physical_unit_type"]},
                     {"name": "column_unit_data_b", "fields": ["floor", "number_of_floors", "bua", "area_uom", "land_area", "garden_area", "roof_area", "terrace_area"]},
                     {"name": "column_unit_data_c", "fields": ["bedrooms", "bathrooms", "has_nanny_room", "has_driver_room", "has_storage_room", "has_parking", "finishing_type", "delivery_date", "delivery_status", "status", "owner_lead"]},
                 ],
@@ -274,7 +274,7 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "name": "compound_summary_section",
                 "opened": True,
                 "columns": [
-                    {"name": "column_compound_summary", "fields": ["project_name", "developer", "destination", "status", "compound_area", "compound_area_unit"]}
+                    {"name": "column_compound_summary", "fields": ["project_name", "record_type", "parent_compound", "developer", "destination", "status", "compound_area", "compound_area_unit"]}
                 ],
             }
         ],
@@ -288,9 +288,9 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "name": "compound_data_section",
                 "opened": True,
                 "columns": [
-                    {"name": "column_compound_data_a", "fields": ["project_name", "developer", "destination", "status"]},
-                    {"name": "column_compound_data_b", "fields": ["compound_area", "compound_area_unit", "master_plan", "description"]},
-                    {"name": "column_compound_data_c", "fields": ["phases", "available_unit_types", "amenities"]},
+                    {"name": "column_compound_data_a", "fields": ["project_name", "record_type", "parent_compound", "developer", "destination", "status"]},
+                    {"name": "column_compound_data_b", "fields": ["compound_area", "compound_area_unit", "master_plan", "source_url", "description"]},
+                    {"name": "column_compound_data_c", "fields": ["available_unit_types", "amenities", "phases"]},
                 ],
             }
         ],
@@ -305,7 +305,7 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "columns": [
                     {
                         "name": "column_unit_type_a",
-                        "fields": ["unit_type_name", "abbreviation", "is_active"],
+                        "fields": ["unit_type_name", "unit_category", "abbreviation", "is_active"],
                     }
                 ],
             }
@@ -322,8 +322,45 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "columns": [
                     {
                         "name": "column_unit_type_data",
-                        "fields": ["unit_type_name", "abbreviation", "is_active"],
+                        "fields": ["unit_type_name", "unit_category", "abbreviation", "is_active"],
                     }
+                ],
+            }
+        ],
+    },
+    "Real Estate Unit Category-Quick Entry": {
+        "doctype": "Real Estate Unit Category",
+        "type": "Quick Entry",
+        "layout": [
+            {
+                "label": "Unit Category Information",
+                "name": "unit_category_section",
+                "columns": [
+                    {
+                        "name": "column_unit_category_a",
+                        "fields": ["category_name", "abbreviation", "is_active", "description"],
+                    }
+                ],
+            }
+        ],
+    },
+    "Real Estate Unit Category-Data Fields": {
+        "doctype": "Real Estate Unit Category",
+        "type": "Data Fields",
+        "layout": [
+            {
+                "label": "Unit Category Information",
+                "name": "unit_category_data_section",
+                "opened": True,
+                "columns": [
+                    {
+                        "name": "column_unit_category_data_a",
+                        "fields": ["category_name", "abbreviation", "is_active"],
+                    },
+                    {
+                        "name": "column_unit_category_data_b",
+                        "fields": ["description"],
+                    },
                 ],
             }
         ],
@@ -397,12 +434,14 @@ REAL_ESTATE_STANDARD_VIEWS = [
         "icon": "building-2",
         "columns": [
             {"label": "Compound Name", "type": "Data", "key": "project_name", "width": "14rem"},
+            {"label": "Record Type", "type": "Select", "key": "record_type", "width": "8rem"},
+            {"label": "Parent Compound", "type": "Link", "key": "parent_compound", "width": "14rem"},
             {"label": "Destination", "type": "Link", "key": "destination", "width": "14rem"},
             {"label": "Developer", "type": "Link", "key": "developer", "width": "14rem"},
             {"label": "Status", "type": "Select", "key": "status", "width": "10rem"},
             {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
         ],
-        "rows": ["name", "project_name", "destination", "developer", "status", "modified"],
+        "rows": ["name", "project_name", "record_type", "parent_compound", "destination", "developer", "status", "modified"],
     },
     {
         "label": "Real Estate Units",
@@ -420,7 +459,7 @@ REAL_ESTATE_STANDARD_VIEWS = [
             {"label": "Seller Owner", "type": "Link", "key": "owner_lead", "width": "14rem"},
             {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
         ],
-        "rows": ["name", "unit_number", "sku", "project", "destination", "developer", "inventory_type", "physical_unit_type", "status", "total_gross", "owner_lead", "modified"],
+        "rows": ["name", "unit_number", "sku", "project", "master_compound", "destination", "developer", "inventory_type", "unit_category", "physical_unit_type", "status", "total_gross", "owner_lead", "modified"],
     },
     {
         "label": "Unit Types",
@@ -429,11 +468,25 @@ REAL_ESTATE_STANDARD_VIEWS = [
         "icon": "shapes",
         "columns": [
             {"label": "Unit Type", "type": "Data", "key": "unit_type_name", "width": "16rem"},
+            {"label": "Unit Category", "type": "Link", "key": "unit_category", "width": "16rem"},
             {"label": "Abbreviation", "type": "Data", "key": "abbreviation", "width": "10rem"},
             {"label": "Active", "type": "Check", "key": "is_active", "width": "8rem"},
             {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
         ],
-        "rows": ["name", "unit_type_name", "abbreviation", "is_active", "modified"],
+        "rows": ["name", "unit_type_name", "unit_category", "abbreviation", "is_active", "modified"],
+    },
+    {
+        "label": "Unit Categories",
+        "dt": "Real Estate Unit Category",
+        "route_name": "Real Estate Unit Categories",
+        "icon": "layers",
+        "columns": [
+            {"label": "Unit Category", "type": "Data", "key": "category_name", "width": "18rem"},
+            {"label": "Abbreviation", "type": "Data", "key": "abbreviation", "width": "10rem"},
+            {"label": "Active", "type": "Check", "key": "is_active", "width": "8rem"},
+            {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
+        ],
+        "rows": ["name", "category_name", "abbreviation", "is_active", "modified"],
     },
     {
         "label": "Amenities",
@@ -451,17 +504,21 @@ REAL_ESTATE_STANDARD_VIEWS = [
 
 REAL_ESTATE_QUICK_FILTERS = {
     "CRM Lead": ["lead_name", "email", "status", "source", "party_type", "lead_owner", "buyer_budget", "preferred_destination", "preferred_unit_type", "preferred_developer", "preferred_compound", "selection_tier"],
-    "Real Estate Unit": ["unit_number", "sku", "project", "destination", "developer", "inventory_type", "physical_unit_type", "floor", "finishing_type", "status", "delivery_status", "owner_lead"],
+    "Real Estate Unit": ["unit_number", "sku", "project", "master_compound", "destination", "developer", "inventory_type", "unit_category", "physical_unit_type", "floor", "finishing_type", "status", "delivery_status", "owner_lead"],
     "Property Developer": ["developer_name", "founded_year", "company_registration"],
-    "Real Estate Project": ["project_name", "destination", "developer", "status"],
+    "Real Estate Project": ["project_name", "record_type", "parent_compound", "destination", "developer", "status"],
     "Real Estate Destination": ["destination_name", "destination_code", "is_active"],
-    "Real Estate Unit Type": ["unit_type_name", "abbreviation", "is_active"],
+    "Real Estate Unit Type": ["unit_type_name", "unit_category", "abbreviation", "is_active"],
+    "Real Estate Unit Category": ["category_name", "is_active"],
     "Real Estate Amenity": ["amenity_name"],
 }
 
 
 def after_install():
     sync_real_estate_crm_defaults()
+    # The default taxonomy is seeded once; later migrations never re-create
+    # categories or types a user has deleted.
+    ensure_default_unit_categories()
 
 
 def after_migrate():
@@ -747,7 +804,22 @@ frappe.ui.form.on('Real Estate Unit', {
     setup(frm) {
         frm.set_query('project', () => ({ filters: {} }));
         frm.set_query('owner_lead', () => ({ filters: { party_type: 'Seller' } }));
-        frm.set_query('physical_unit_type', () => ({ filters: { is_active: 1 } }));
+        frm.set_query('physical_unit_type', () => ({
+            filters: Object.assign(
+                { is_active: 1 },
+                frm.doc.unit_category ? { unit_category: frm.doc.unit_category } : {}
+            ),
+        }));
+        frm.set_query('unit_category', () => ({ filters: { is_active: 1 } }));
+    },
+    unit_category(frm) {
+        if (!frm.doc.unit_category || !frm.doc.physical_unit_type) return;
+        frappe.db.get_value('Real Estate Unit Type', frm.doc.physical_unit_type, 'unit_category').then((r) => {
+            const category = r && r.message && r.message.unit_category;
+            if (category && category !== frm.doc.unit_category) {
+                frm.set_value('physical_unit_type', null);
+            }
+        });
     },
     onload(frm) {
         if (frm.is_new()) {

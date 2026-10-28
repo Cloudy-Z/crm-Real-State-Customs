@@ -31,6 +31,7 @@ class RealEstateUnit(Document):
             set_parent_projections(self)
         if self.is_new() or self.has_value_changed("physical_unit_type"):
             mirror_legacy_unit_type(self)
+        sync_unit_category(self)
         if self.is_new() or self.has_value_changed("delivery_date"):
             set_delivery_status(self)
         if self.is_new() or any(self.has_value_changed(fieldname) for fieldname in FINANCIAL_INPUT_FIELDS):
@@ -66,13 +67,25 @@ def set_parent_projections(doc):
     compound = frappe.db.get_value(
         "Real Estate Project",
         doc.project,
-        ["developer", "destination"],
+        ["name", "developer", "destination", "record_type", "parent_compound"],
         as_dict=True,
     )
     if not compound:
         frappe.throw(_("Compound {0} was not found.").format(doc.project), frappe.DoesNotExistError)
     doc.developer = compound.get("developer")
     doc.destination = compound.get("destination")
+    if doc.meta.has_field("master_compound"):
+        is_phase = compound.get("record_type") == "Phase" and compound.get("parent_compound")
+        doc.master_compound = compound.get("parent_compound") if is_phase else compound.get("name")
+
+
+def sync_unit_category(doc):
+    """Unit Category only narrows the Unit Type choice; the saved value follows the Unit Type."""
+    if not doc.meta.has_field("unit_category") or not doc.get("physical_unit_type"):
+        return
+    category = frappe.db.get_value("Real Estate Unit Type", doc.physical_unit_type, "unit_category")
+    if category:
+        doc.unit_category = category
 
 
 def mirror_legacy_unit_type(doc):
@@ -210,11 +223,11 @@ def validate_physical_unit_type(doc):
     is_active = frappe.db.get_value("Real Estate Unit Type", doc.physical_unit_type, "is_active")
     if not is_active and (doc.is_new() or doc.has_value_changed("physical_unit_type")):
         frappe.throw(_("Select an active Unit Type."), frappe.ValidationError)
-    allowed = frappe.get_all(
-        "Real Estate Compound Unit Type",
-        filters={"parent": doc.project, "parenttype": "Real Estate Project", "is_available": 1},
-        pluck="unit_type",
-    )
+    allowed = _allowed_unit_types(doc.project)
+    master = doc.get("master_compound")
+    if not allowed and master and master != doc.project:
+        # A Phase without its own list follows its Parent Compound's Unit Types.
+        allowed = _allowed_unit_types(master)
     if allowed and doc.physical_unit_type not in allowed:
         frappe.throw(
             _("Unit Type {0} is not enabled for Compound {1}.").format(
@@ -223,6 +236,14 @@ def validate_physical_unit_type(doc):
             ),
             frappe.ValidationError,
         )
+
+
+def _allowed_unit_types(project):
+    return frappe.get_all(
+        "Real Estate Compound Unit Type",
+        filters={"parent": project, "parenttype": "Real Estate Project", "is_available": 1},
+        pluck="unit_type",
+    )
 
 
 def validate_non_negative_details(doc):

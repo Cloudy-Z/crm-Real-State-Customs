@@ -228,6 +228,7 @@ REAL_ESTATE_FORM_DOCTYPES = {
     "Property Developer",
     "Real Estate Destination",
     "Real Estate Unit Type",
+    "Real Estate Unit Category",
     "Real Estate Amenity",
 }
 
@@ -573,8 +574,8 @@ def get_requirement_compounds(destination, developer=None):
         filters["developer"] = developer
     return {
         "compounds": frappe.get_list("Real Estate Project", filters=filters,
-            fields=["name", "project_name", "destination", "developer"],
-            order_by="project_name asc", limit_page_length=500),
+            fields=["name", "project_name", "destination", "developer", "record_type", "parent_compound"],
+            order_by="project_name asc", limit_page_length=0),
         "currency": _site_currency(),
     }
 
@@ -1084,7 +1085,8 @@ def get_available_units_for_selection(
         frappe.throw(str(exc))
     filters = {"status": "Available", "inventory_type": ["in", categories]}
     if project:
-        filters["project"] = project
+        # A Compound also matches the Units inside its Phases; a Phase matches only itself.
+        filters["project"] = ["in", _compound_family(project)]
     if developer:
         filters["developer"] = developer
     if physical_unit_type:
@@ -1119,9 +1121,11 @@ def get_available_units_for_selection(
         "unit_number",
         "sku",
         "project",
+        "master_compound",
         "destination",
         "developer",
         "inventory_type",
+        "unit_category",
         "physical_unit_type",
         "unit_type",
         "floor",
@@ -1299,6 +1303,24 @@ def _lead_property_match_profile(lead_doc, interest_category=None, interest=None
     return profile
 
 
+def _compound_family(project):
+    """Compound -> itself plus its Phases; Phase -> only itself."""
+    from real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_project.real_estate_project import (
+        get_compound_family,
+    )
+
+    return get_compound_family(project) or [project]
+
+
+def _unit_compound_for_profile(unit, expected_project):
+    """Let a Unit inside a Phase count as matching its Parent Compound."""
+    actual = unit.get("project")
+    master = unit.get("master_compound")
+    if expected_project and master and expected_project == master:
+        return master
+    return actual
+
+
 def _apply_match_profile_overrides(
     profile,
     project=None,
@@ -1364,7 +1386,7 @@ def _score_property_match(unit, profile):
 
     comparisons = (
         ("Unit type", profile.get("unit_type"), unit.get("physical_unit_type") or unit.get("unit_type"), 22),
-        ("Compound", profile.get("project"), unit.get("project"), 16),
+        ("Compound", profile.get("project"), _unit_compound_for_profile(unit, profile.get("project")), 16),
         ("Developer", profile.get("developer"), unit.get("developer"), 12),
         ("Finishing", profile.get("finishing_type"), unit.get("finishing_type"), 10),
     )

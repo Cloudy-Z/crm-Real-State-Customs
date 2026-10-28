@@ -296,6 +296,7 @@ class SchemaContractTests(unittest.TestCase):
             "Real Estate Project": "real_estate_project",
             "Real Estate Unit": "real_estate_unit",
             "Real Estate Unit Type": "real_estate_unit_type",
+            "Real Estate Unit Category": "real_estate_unit_category",
             "Real Estate Amenity": "real_estate_amenity",
         }
         for layout_name, settings in layouts.items():
@@ -329,6 +330,7 @@ class SchemaContractTests(unittest.TestCase):
             "Property Developer",
             "Real Estate Destination",
             "Real Estate Unit Type",
+            "Real Estate Unit Category",
             "Real Estate Amenity",
         }
         views = literal_assignment(INSTALL, "REAL_ESTATE_STANDARD_VIEWS")
@@ -343,6 +345,7 @@ class SchemaContractTests(unittest.TestCase):
             "property_developer": {"track_changes": 0, "track_views": 0},
             "real_estate_destination": {"track_changes": 0, "track_views": 0},
             "real_estate_unit_type": {"track_changes": 0, "track_views": 0},
+            "real_estate_unit_category": {"track_changes": 0, "track_views": 0},
             "real_estate_amenity": {"track_changes": 0, "track_views": 0},
         }
         for folder, tracking in masters.items():
