@@ -1,0 +1,35 @@
+---
+title: PROPOSED v2 - One Lead Status list for both cycles (system-managed, read-only)
+---
+flowchart LR
+    subgraph SHARED["Shared by Buyer and Seller"]
+        N["New"]
+        F["Fresh Lead"]
+        NG["Negotiating"]
+        CL["Closing"]
+        CW["Closed Won"]
+    end
+    subgraph BUY["Buyer only (existing)"]
+        RQ["Requested"]
+        OS["Offer Sent"]
+    end
+    subgraph SELL["Seller only (new)"]
+        PRC["Pricing"]
+        LST["Listed"]
+    end
+    subgraph DEL["REMOVE - not used by either cycle"]
+        X1["Contacted"]
+        X2["Nurture"]
+        X3["Qualified"]
+        X4["Converted"]
+        X5["Unqualified"]
+        X6["Junk"]
+        X7["Offer Selected (legacy)"]
+    end
+
+    N --> RQ --> OS --> NG
+    F --> RQ
+    N -. seller .-> PRC --> LST --> NG
+    F -. seller .-> PRC
+    N -. seller, owner prices .-> LST
+    NG --> CL --> CW

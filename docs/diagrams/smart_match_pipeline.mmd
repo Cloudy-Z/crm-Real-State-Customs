@@ -1,0 +1,11 @@
+%% Smart Match pipeline: get_smart_matched_units() -> get_available_units_for_selection()
+%% -> _score_property_match() in api.py.
+flowchart TD
+    In["Interest requirements (or Lead defaults)<br/>+ agent filter overrides in the popup"] --> P["Build match profile<br/>category, search scope Resale / Primary / Both,<br/>deal type Buy / Rent, destination, unit category, unit type,<br/>compound, developer, finishing, budgets, delivery date"]
+    P --> V["Validate relations<br/>Compound belongs to Destination and Developer;<br/>Unit Type belongs to Unit Category"]
+    V --> H["Hard filters (never relaxed silently)<br/>status = Available; listing_purpose fits the deal type;<br/>inventory type in search scope; Rent only for Resale;<br/>Compound filter includes its Phases (master_compound)"]
+    H --> S["Score each Unit (weights)<br/>Destination 30, Budget 30, Unit Type 22,<br/>Compound 16, Developer 12, Delivery 12, Finishing 10<br/>score = weighted / applicable weight x 100"]
+    S --> B["Budget band (total price, or monthly rent for Rent)<br/>within = 1.0; up to 10% over = 0.75;<br/>up to 20% over = 0.45; more = 0; no price = unavailable"]
+    B --> Lv["Level: Excellent >= 85, Good >= 65,<br/>Possible >= 40, otherwise Alternative; Unscored if no criteria"]
+    Lv --> O["Sort by score desc, then price asc<br/>return reasons (max 4) and gaps (max 3) per card"]
+    O --> Sel["Agent multi-selects Units<br/>each becomes its own Matched Interest with the Unit's real category"]

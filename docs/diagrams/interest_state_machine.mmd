@@ -1,0 +1,68 @@
+%% Lead Interest lifecycle. Source of truth: ALLOWED_TRANSITIONS in interest_workflow.py.
+%% Every arrow must be caused by an action result; nobody edits workflow_status by hand.
+stateDiagram-v2
+    direction LR
+    [*] --> Requested: no inventory match\n(request / brokerage / international)
+    [*] --> Matched: inventory Unit selected
+
+    Requested --> Matched
+    Requested --> Fulfilled: Match Requested Unit\n(replacement rows start Matched)
+    Requested --> Superseded
+    Requested --> Cancelled
+
+    Matched --> OfferSent: Send Offer (dispatched)
+    Matched --> Superseded
+    Matched --> Cancelled
+
+    OfferSent --> OfferViewed: follow-up reports viewed
+    OfferSent --> OfferAccepted: Offer Decision select
+    OfferSent --> Rejected
+    OfferSent --> Superseded: Change Requirements
+
+    OfferViewed --> OfferAccepted
+    OfferViewed --> Rejected
+    OfferViewed --> Superseded
+
+    OfferAccepted --> Negotiating
+    OfferAccepted --> ShowingScheduled: plan Showing
+    OfferAccepted --> Closing: Begin Closing
+    OfferAccepted --> Rejected
+    OfferAccepted --> Superseded
+
+    Negotiating --> ShowingScheduled
+    Negotiating --> Closing: Begin Closing
+    Negotiating --> Rejected
+    Negotiating --> Superseded
+
+    ShowingScheduled --> ShownInterested: showing result Interested
+    ShowingScheduled --> ShownConsidering: Considering / No Feedback
+    ShowingScheduled --> Negotiating: restore after No Show / Cancelled
+    ShowingScheduled --> Rejected
+
+    ShownConsidering --> Negotiating
+    ShownConsidering --> ShowingScheduled
+    ShownConsidering --> ShownInterested
+    ShownConsidering --> Rejected
+
+    ShownInterested --> Negotiating
+    ShownInterested --> ShowingScheduled
+    ShownInterested --> Closing: Begin Closing
+    ShownInterested --> Rejected
+
+    Closing --> ClosedWon: Contract Signed\n(reference + signed date)
+    Closing --> Negotiating: abandon before signature
+    Closing --> Rejected
+
+    ClosedWon --> [*]
+    Rejected --> [*]
+    Superseded --> [*]
+    Fulfilled --> [*]
+    Cancelled --> [*]
+
+    state "Offer Sent" as OfferSent
+    state "Offer Viewed" as OfferViewed
+    state "Offer Accepted" as OfferAccepted
+    state "Showing Scheduled" as ShowingScheduled
+    state "Shown - Interested" as ShownInterested
+    state "Shown - Considering" as ShownConsidering
+    state "Closed Won" as ClosedWon

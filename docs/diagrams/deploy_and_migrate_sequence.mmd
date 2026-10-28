@@ -1,0 +1,21 @@
+%% Deployment order on Frappe Cloud and what "bench migrate" runs, in order.
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant GH as GitHub
+    participant FC as Frappe Cloud bench
+    participant Site as Site DB
+    participant UI as Browser
+
+    Dev->>GH: push custom app (crm-Real-State-Customs, main)
+    Dev->>GH: push CRM fork (crm-Real-State, develop)
+    Dev->>FC: deploy custom app FIRST
+    FC->>Site: migrate: [pre_model_sync] patches
+    FC->>Site: sync DocType JSON (schema changes)
+    FC->>Site: [post_model_sync] patches
+    FC->>Site: fixtures (Custom Field on CRM Lead, User)
+    FC->>Site: after_migrate -> sync_real_estate_crm_defaults()
+    Note over Site: statuses, property setters, client scripts,<br/>layouts, views, quick filters, Interest backfill
+    Dev->>FC: deploy CRM fork build SECOND (frontend assets)
+    UI->>UI: hard refresh (Ctrl+Shift+R) / clear service worker
+    Dev->>UI: run the acceptance checklist of the release guide

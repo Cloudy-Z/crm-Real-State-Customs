@@ -1,0 +1,71 @@
+%% Core data model (custom app DocTypes + the CRM Lead they extend).
+%% "Real Estate Project" is the technical name of the Compound DocType.
+erDiagram
+    CRM_LEAD ||--o{ LEAD_INTEREST : "has (Buyer only)"
+    CRM_LEAD ||--o{ LEAD_ACTION_EXECUTION : "has"
+    CRM_LEAD ||--o{ REAL_ESTATE_UNIT : "owns (Owner only, owner_lead)"
+    CRM_LEAD ||--o{ LEAD_STATUS_TRANSITION : "status audit"
+    LEAD_INTEREST }o--o| REAL_ESTATE_UNIT : "unit (inventory Interests)"
+    LEAD_INTEREST ||--o{ LEAD_INTEREST_TRANSITION : "row audit"
+    LEAD_ACTION_EXECUTION ||--o{ LEAD_ACTION_INTEREST_SCOPE : "scopes (child)"
+    LEAD_ACTION_INTEREST_SCOPE }o--|| LEAD_INTEREST : "locks"
+    LEAD_ACTION_EXECUTION }o--o| EVENT : "calendar projection"
+    LEAD_ACTION_EXECUTION }o--o| REAL_ESTATE_UNIT : "unit"
+    REAL_ESTATE_UNIT ||--o{ UNIT_SCHEDULED_SHOWING : "showings (child)"
+    REAL_ESTATE_UNIT }o--|| REAL_ESTATE_PROJECT : "project (Compound or Phase)"
+    REAL_ESTATE_UNIT }o--o| REAL_ESTATE_UNIT_TYPE : "physical_unit_type"
+    REAL_ESTATE_UNIT }o--o| REAL_ESTATE_UNIT_CATEGORY : "unit_category"
+    REAL_ESTATE_UNIT_TYPE }o--o| REAL_ESTATE_UNIT_CATEGORY : "unit_category"
+    REAL_ESTATE_PROJECT }o--o| REAL_ESTATE_PROJECT : "parent_compound (Phase to Compound)"
+    REAL_ESTATE_PROJECT }o--o| PROPERTY_DEVELOPER : "developer"
+    REAL_ESTATE_PROJECT }o--o| REAL_ESTATE_DESTINATION : "destination"
+    REAL_ESTATE_PROJECT ||--o{ COMPOUND_AMENITY : "amenities (child)"
+    COMPOUND_AMENITY }o--|| REAL_ESTATE_AMENITY : "amenity"
+    PROPERTY_DEVELOPER ||--o{ DEVELOPER_FOUNDER : "founders (child, optional)"
+
+    CRM_LEAD {
+        Select party_type "Buyer | Owner (only role authority)"
+        Select status "read-only rollup"
+        Select interest_status "Interested | Not Interested (read-only)"
+        Select owner_intent "Sell | Rent | Sell or Rent"
+        Phone whatsapp_number
+        Int no_answer_consecutive_count
+        Int no_answer_total_count
+        Data lead_age "hourly job"
+    }
+    LEAD_INTEREST {
+        Select record_type "Inventory Unit | Request | Outsource | International"
+        Select category "Resale | Primary | Brokerage Request | International | Outsource"
+        Select deal_type "Buy | Rent"
+        Select workflow_status "15 states, system-set"
+        Link unit
+        Link requested_destination
+        Currency requested_budget
+        Data contract_reference
+        Date contract_signed_date
+    }
+    LEAD_ACTION_EXECUTION {
+        Select action_type
+        Select purpose
+        Select workflow_status "Planned | Due | In Progress | Completed | Cancelled | Rescheduled | Missed"
+        Select scope_type "Lead | Interest | Batch"
+        Link seller_lead "Related Owner Lead"
+        Data client_request_id "idempotent replay"
+    }
+    REAL_ESTATE_UNIT {
+        Data sku "generated"
+        Select inventory_type "Resale | Primary | International"
+        Select listing_purpose "For Sale | For Rent | For Sale or Rent"
+        Select status "Available | Reserved | Sold | Rented"
+        Link master_compound "read-only"
+        Currency paid
+        Currency over_price
+        Currency remaining
+        Currency total_gross "calculated"
+        Currency rental_monthly_rate
+    }
+    REAL_ESTATE_PROJECT {
+        Data project_name
+        Select record_type "Compound | Phase"
+        Link parent_compound
+    }

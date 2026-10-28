@@ -1,0 +1,45 @@
+---
+title: PROPOSED v2 - Seller cycle mirrors the Buyer guided-action cycle (same dialog, same flags, same rules)
+---
+flowchart TD
+    subgraph BUYER["BUYER cycle (existing, unchanged)"]
+        direction TB
+        B1(["New / Fresh Lead"]) --> B2["Call or WhatsApp only"]
+        B2 --> B3{"Answered?"}
+        B3 -- "No" --> B4["No-answer streak +1, total +1<br/>next call required"] --> B2
+        B3 -- "Yes" --> B5{"Interested to buy?"}
+        B5 -- "No" --> B6["Flag: Not Interested"]
+        B5 -- "Yes" --> B7["Same popup: Interest requirements<br/>+ Smart Match units or Request"]
+        B7 --> B8["Interest rows: Matched / Requested<br/>Lead: Requested"]
+        B8 --> B9["Send Offer (WhatsApp)<br/>row: Offer Sent - Lead: Offer Sent"]
+        B9 --> B10{"Offer Decision"}
+        B10 -- "Accept" --> B11["Negotiating, Showing,<br/>Owner / Developer Meeting"]
+        B10 -- "Change requirements" --> B7
+        B11 --> B12["Closing - contract reference + signed date"] --> B13(["Closed Won"])
+    end
+
+    subgraph SELLER["SELLER cycle (proposed mirror)"]
+        direction TB
+        S1(["New / Fresh Lead"]) --> S2["Call or WhatsApp only"]
+        S2 --> S3{"Answered?"}
+        S3 -- "No" --> S4["No-answer streak +1, total +1<br/>next call required"] --> S2
+        S3 -- "Yes" --> S5{"Interested to sell / list?"}
+        S5 -- "No" --> S6["Flag: Not Interested"]
+        S5 -- "Yes" --> S7["Same popup: Add Property<br/>unit details + WHO PRICES?"]
+        S7 -- "Owner sets asking price" --> S10
+        S7 -- "Owner asks agent to price" --> S8["Unit row: Pricing Requested<br/>Lead: Pricing"]
+        S8 --> S9["Agent Pricing: proposed Over Price + basis<br/>sent to owner (WhatsApp)<br/>Unit row: Price Proposed"]
+        S9 --> S9D{"Price Decision by owner"}
+        S9D -- "Accept / set own price" --> S10["Unit row: Listed - Lead: Listed<br/>visible to buyer Smart Match<br/>auto next action: Availability Verification in 3 months"]
+        S9D -- "Re-price" --> S8
+        S9D -- "Declines" --> S14(["Unit: Withdrawn"])
+        S10 --> S11["Buyer Owner Meetings and Showings<br/>on his Units appear automatically"]
+        S11 --> S12["Buyer Interest on his Unit: Negotiating / Closing<br/>Lead: Negotiating / Closing"] --> S13(["Closed Won - Unit Sold"])
+        S10 --> V1["Every 3 months: Availability Verification call<br/>Unit row: Verification Due"]
+        V1 -- "Available - same or new owner price" --> S10
+        V1 -- "Needs re-pricing" --> S8
+        V1 -- "Temporarily unavailable" --> V2["Unit row: Off Market<br/>follow-up call required"] --> V1
+        V1 -- "Sold elsewhere / withdrawn" --> S14
+    end
+
+    B1 ~~~ S1

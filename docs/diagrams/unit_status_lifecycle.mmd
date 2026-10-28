@@ -1,0 +1,18 @@
+%% Real Estate Unit.status as changed by the contract-closing services
+%% (begin_interest_closing / finalize_interest_contract / abandon_interest_closing,
+%% release_rented_unit). Agents cannot set Reserved/Sold/Rented by hand.
+stateDiagram-v2
+    direction LR
+    [*] --> Available: Unit created\n(Owner Add Property or import)
+    Available --> Reserved: Begin Closing on ONE buyer Interest\n(lock Unit, then Interest; closing_interest set)
+    Reserved --> Available: closing abandoned before signature
+    Reserved --> Sold: Contract Signed, Deal Type Buy\n(sold_interest set)
+    Reserved --> Rented: Contract Signed, Deal Type Rent
+    Rented --> Available: manager "Return to Market"\n(lease ended)
+    Sold --> [*]
+
+    note right of Reserved
+        Competing buyers cannot begin closing
+        on a Reserved / Sold / Rented Unit.
+        Their Interests stay visible (no auto-delete).
+    end note

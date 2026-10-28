@@ -1,0 +1,18 @@
+%% CRM Lead.status is a read-only summary of the Lead's Interests.
+%% Source of truth: _rollup_target() in interest_workflow.py. First matching rule wins.
+flowchart TD
+    Start(["Recalculate Lead status<br/>(after every Interest transition)"]) --> Q1{"Any Interest is Closed Won<br/>WITH contract reference, signed date,<br/>recorded-by and closed-won time?"}
+    Q1 -- yes --> S1["Closed Won"]
+    Q1 -- no --> Drop["Ignore terminal Interests<br/>(Rejected, Superseded, Fulfilled, Cancelled, Closed Won)"]
+    Drop --> Q2{"Any active Interest in Closing?"}
+    Q2 -- yes --> S2["Closing"]
+    Q2 -- no --> Q3{"Any active Interest in Offer Accepted,<br/>Negotiating, Showing Scheduled,<br/>Shown - Considering or Shown - Interested?"}
+    Q3 -- yes --> S3["Negotiating"]
+    Q3 -- no --> Q4{"Any active Interest in<br/>Offer Sent or Offer Viewed?"}
+    Q4 -- yes --> S4["Offer Sent"]
+    Q4 -- no --> Q5{"Any active Requested Interest?"}
+    Q5 -- yes --> S5["Requested"]
+    Q5 -- no --> S6["Origin status<br/>New (manual / import) or Fresh Lead (API / campaign)"]
+
+    Note1["Matched alone never moves the Lead.<br/>Qualification (Interested / Not Interested) is a separate<br/>read-only flag: interest_status."]
+    S6 -.-> Note1

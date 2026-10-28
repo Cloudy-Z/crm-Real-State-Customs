@@ -1,46 +1,62 @@
-# CRM Real State Customs
+# CRM Real Estate Customs
 
-This repository is an isolated Frappe custom app that extends the `Cloudy-Z/crm-Real-State` Frappe CRM fork for real-estate brokerage and developer workflows.
+A Frappe custom app that turns **Frappe CRM** into a CRM for a real-estate brokerage and for developer (primary) sales. It runs on **Frappe Framework v16** and **Frappe Cloud**, alongside the CRM fork [`Cloudy-Z/crm-Real-State`](https://github.com/Cloudy-Z/crm-Real-State) (branch `develop`), which provides the `/crm` portal UI.
 
-The app intentionally keeps business entities, validations, fixtures, patches, and install hooks outside the CRM fork. Portal-facing UI behavior is implemented in the CRM fork through a minimal file-based CRM Lead controller, while this app owns the backend model.
+This app owns the data model, business rules, workflow engine, Smart Match, migrations, Desk scripts and portal layouts. The CRM fork owns the Vue screens.
 
-## Main objects
+## Documentation
 
-| Object | Purpose |
+| Document | For |
 |---|---|
-| Property Developer | Developer/company master record; names are generated from `developer_name`. |
-| Real Estate Project | Developer project / compound / building master linked to a Property Developer; names are generated from `project_name`. |
-| Real Estate Unit | Sellable inventory unit linked to a project and developer; each unit receives a unique read-only SKU before insert. |
-| Lead Interested Unit | Child table linking buyer leads to units of interest. |
-| CRM Lead custom fields | Adds `party_type` and `interested_in_units` to the existing CRM Lead DocType. |
+| [docs/TECHNICAL_GUIDE.md](docs/TECHNICAL_GUIDE.md) | Full technical guide for people: architecture, data model, Buyer workflow, Interest lifecycle, closing, Smart Match, Compounds and Phases, Sale/Rent, APIs, migrations, testing, deployment, troubleshooting. |
+| [AGENTS.md](AGENTS.md) | Rulebook and knowledge base for AI coding agents: invariants, file map, how to make changes safely, verification commands, incident lessons. |
+| [docs/diagrams/](docs/diagrams/) | Editable Mermaid sources for every diagram. |
+| [docs/proposals/owner_unit_workflow/](docs/proposals/owner_unit_workflow/seller_unit_workflow_design.md) | Proposed guided Owner/Unit workflow (awaiting approval, not implemented). |
+| [tools/compound_import/](tools/compound_import/IMPORT_GUIDE.md) | Converter and verifier for importing Destinations, Developers, Amenities, Compounds and Phases from a spreadsheet. |
+| [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) | Early implementation notes (historical; the technical guide is current). |
 
-## Compatibility
-This app is maintained for Frappe Framework v15 and v16, with Frappe CRM installed before this custom app. The package metadata intentionally declares `frappe >=15.0.0,<17.0.0` so Frappe Cloud can resolve it on both supported framework branches.
+## What it adds
 
-## Installation
+- **Buyer and Owner Leads.** `party_type` on CRM Lead is the only role field.
+- **Guided Buyer action cycle.** Call or WhatsApp first, then qualification, requirements, Smart Match, offers, meetings, showings and closing. Every action is recorded in one popup with one atomic submit and a required next action.
+- **Independent Interests.** Each requirement or offered Unit is its own `Lead Interest`, with its own status, history and lock. The Lead status is a read-only summary of its Interests.
+- **Signed-contract closing.** Closing reserves the Unit. Contract Signed (reference and signed date required, private file optional) marks the Interest Closed Won and the Unit Sold or Rented.
+- **Inventory masters.** Units, Compounds (with Phases), Developers, Destinations, Unit Categories, Unit Types and Amenities, each with portal list and form pages and import support.
+- **Smart Match.** Ranks available Units against a requirement with explainable scores, Resale/Primary/Both scope, Buy/Rent deal type and dependent filters.
+- **Sale and Rent.** Units are listed For Sale, For Rent or both. Buyer Interests are Buy or Rent.
 
-Install this app after `frappe` and `crm` are installed on the site.
+## Requirements
+
+- Frappe Framework v16 (package metadata allows `>=15,<17`; v16 is the tested target).
+- Frappe CRM fork `Cloudy-Z/crm-Real-State`, installed **before** this app.
+- Python 3.10 or later, and the Python dependency `phonenumbers` (declared in `pyproject.toml`).
+
+## Install
 
 ```bash
-bench get-app crm_real_state_customs https://github.com/Cloudy-Z/crm-Real-State-Customs.git
-bench --site your-site.local install-app real_estate_crm_customs
-bench --site your-site.local migrate
+bench get-app https://github.com/Cloudy-Z/crm-Real-State.git --branch develop
+bench get-app https://github.com/Cloudy-Z/crm-Real-State-Customs.git --branch main
+bench --site your-site install-app crm
+bench --site your-site install-app real_estate_crm_customs
+bench --site your-site migrate
 bench build --app crm
-bench --site your-site.local clear-cache
+bench --site your-site clear-cache
 ```
 
-If you already installed the app before the latest fields were added, run:
+All setup (custom fields, statuses, property setters, client scripts, layouts, views, default master data) runs automatically in `after_install` and `after_migrate`. Do not run setup functions by hand, and do not fix data with manual SQL. Every fix belongs in a patch or in the migrate hooks, so fresh and upgraded sites behave the same.
+
+## Deploy on Frappe Cloud
+
+1. Deploy this app first and wait for the migrate to finish.
+2. Deploy the CRM fork second, so the portal assets are rebuilt.
+3. Hard refresh the browser (Ctrl+Shift+R) or clear the service worker.
+
+## Test
 
 ```bash
-bench --site your-site.local execute real_estate_crm_customs.install.after_install
-bench --site your-site.local migrate
-bench --site your-site.local clear-cache
+# backend (pure Python, no bench needed)
+PYTHONPATH=tests python3 -m unittest discover -s tests -p 'test_*.py'
+
+# frontend (in the CRM fork)
+cd frontend && yarn install --frozen-lockfile && yarn test:run && yarn build
 ```
-
-## Real Estate Inventory and Portal Configuration
-
-This app now defines a three-tier real-estate inventory hierarchy: **Property Developer**, **Real Estate Project**, and **Real Estate Unit**. Units generate a unique read-only SKU before insert using the project abbreviation, unit type, floor, and a four-digit serial number, for example `COMP-APT-FL02-0042`.
-
-To expose **Real Estate Unit** through Frappe native website portal access, open **DocType > Real Estate Unit** in Desk, enable **Has Web View**, set a route such as `real-estate-units`, and keep access limited to authenticated users by granting read/create permissions only to the relevant portal role or logged-in user role. Do not enable guest read permission for inventory records. If you want end users to create records from the portal, also enable web-form or website permission rules for the intended logged-in role only. After changing the DocType, run `bench --site <site-name> migrate`, clear cache, and verify from a logged-in portal user account.
-
-The installation hook also seeds Client Scripts for dynamic unit defaults, strict CRM Lead phone validation, and a seller workflow button named **Assign Property Unit** that only lists units with status `Available` and adds the selected unit to the lead's interested-units child table.

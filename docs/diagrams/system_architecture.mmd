@@ -1,0 +1,34 @@
+%% System architecture: two repositories, one Frappe site.
+%% Edit freely; render with any Mermaid viewer (GitHub renders .mmd inside ```mermaid blocks).
+flowchart LR
+    subgraph Browser["Agent browser"]
+        Portal["CRM portal /crm<br/>Vue 3 + frappe-ui<br/>(repo: crm-Real-State, branch develop)"]
+        Desk["Frappe Desk /app<br/>(client scripts installed by the custom app)"]
+    end
+
+    subgraph Site["Frappe Cloud site (Frappe v16)"]
+        CRM["App: crm<br/>Frappe CRM fork<br/>CRM Lead, CRM Deal, views, Data Import page"]
+        subgraph CustomParts["App: real_estate_crm_customs (repo: crm-Real-State-Customs, branch main)"]
+            API["api.py<br/>whitelisted workflow API, Smart Match, guards"]
+            IW["interest_workflow.py<br/>Interest lifecycle, locks, closing, Lead rollup"]
+            Policy["requirement_policy.py / party_roles.py /<br/>unit_financials.py / workflow_context.py"]
+            DT["DocTypes<br/>Unit, Compound, Developer, Destination,<br/>Unit Type, Unit Category, Amenity,<br/>Lead Interest, Lead Action Execution, audit tables"]
+            Install["install.py + patches + fixtures<br/>(after_install / after_migrate)"]
+            Sched["Scheduler<br/>hourly lead age, daily delivery status"]
+        end
+        DB[("MariaDB")]
+    end
+
+    Portal -- "frappe.call / REST" --> API
+    Desk -- "frappe.call / form save" --> DT
+    API --> IW
+    API --> Policy
+    IW --> DT
+    API --> DT
+    CRM -- "doc_events: CRM Lead validate" --> API
+    Install --> DT
+    Install --> CRM
+    Sched --> API
+    Sched --> DT
+    DT --> DB
+    CRM --> DB

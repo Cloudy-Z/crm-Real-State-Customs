@@ -1,0 +1,30 @@
+%% Buyer guided action cycle as implemented in the unified action dialog
+%% (LeadUnifiedActionDialog.vue) and submit_lead_action_bundle() in api.py.
+%% One popup, fields revealed step by step, ONE final atomic submit.
+flowchart TD
+    A(["Buyer Lead enters: New or Fresh Lead"]) --> B{"Agent action"}
+    B -- "WhatsApp (subject recorded, chat opens)" --> W["WhatsApp logged<br/>no status change"]
+    W --> B
+    B -- "Call" --> C{"Call result"}
+    C -- "No Answer" --> NA["no-answer streak +1, lifetime total +1<br/>Next Action required"]
+    C -- "Wrong Number / Invalid - Disconnected" --> NA2["recorded; Next Action required"]
+    NA --> B
+    NA2 --> B
+    C -- "Answered" --> D{"Interested?"}
+    D -- "Not Interested" --> NI["interest_status = Not Interested<br/>commercial actions blocked;<br/>only a manager can requalify"]
+    D -- "Interested" --> R["Requirements in the same popup<br/>Category (Resale / Primary / Brokerage / International),<br/>Deal Type (Buy / Rent), Destination (required),<br/>Unit Category, Unit Type, budgets, Compound, Developer, Delivery Date"]
+    R --> SM["Smart Match (Resale / Primary / Both)<br/>multi-select Units"]
+    SM -- "units selected" --> M["one Matched Interest per Unit"]
+    SM -- "no suitable unit" --> RQ["Requested Interest<br/>(requirements snapshot kept)"]
+    M --> NX["Next Action (required at final submit):<br/>Call, Explore Meeting, Send Offer, ..."]
+    RQ --> NX
+    NX --> SUB(["Submit once: result + requirements + Interests +<br/>status audit + next action saved together"])
+    SUB --> L{"Per-Interest row actions"}
+    L -- "Send Offer (WhatsApp with unit details)" --> OS["Offer Sent"]
+    OS -- "Offer Decision: select" --> OA["Offer Accepted"]
+    OS -- "Change Requirements" --> SUP["Superseded + new Interests"]
+    OS -- "Reject" --> REJ["Rejected (Lead not lost)"]
+    OA --> NEG["Negotiating / Showing / Owner Meeting (Resale) /<br/>Developer Meeting (Primary)"]
+    NEG --> CL["Begin Closing: Unit Reserved"]
+    CL -- "Contract Signed: reference + signed date<br/>(attachment optional, private)" --> WON["Closed Won: Unit Sold or Rented"]
+    CL -- "back to negotiation / withdrawal" --> NEG
