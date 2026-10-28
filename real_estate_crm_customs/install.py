@@ -41,6 +41,7 @@ LEAD_EVENT_LAYOUT_FIELDS = []  # Deprecated: event tracking now uses native Even
 
 LEAD_REAL_ESTATE_LAYOUT_FIELDS = [
     "party_type",
+    "owner_intent",
     "buyer_budget",
     "budget_currency",
     "inventory_search_scope",
@@ -77,6 +78,7 @@ DEFAULT_CRM_LEAD_SIDE_PANEL_LAYOUT = [
                     "source",
                     "job_title",
                     "party_type",
+                    "owner_intent",
                     "selection_tier",
                 ],
             }
@@ -189,7 +191,7 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "label": "General Information",
                 "name": "unit_general_section",
                 "columns": [
-                    {"name": "column_unit_a", "fields": ["unit_number", "project", "master_compound", "destination", "developer", "inventory_type", "unit_category", "physical_unit_type"]},
+                    {"name": "column_unit_a", "fields": ["unit_number", "project", "master_compound", "destination", "developer", "inventory_type", "listing_purpose", "unit_category", "physical_unit_type"]},
                     {"name": "column_unit_b", "fields": ["floor", "number_of_floors", "bua", "area_uom", "land_area", "garden_area", "roof_area", "terrace_area"]},
                     {"name": "column_unit_c", "fields": ["bedrooms", "bathrooms", "has_nanny_room", "has_driver_room", "has_storage_room", "has_parking", "finishing_type", "delivery_date", "delivery_status", "status", "owner_lead"]},
                 ],
@@ -213,7 +215,7 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "name": "unit_summary_section",
                 "opened": True,
                 "columns": [
-                    {"name": "column_unit_summary", "fields": ["unit_number", "sku", "project", "master_compound", "destination", "developer", "inventory_type", "unit_category", "physical_unit_type", "status", "delivery_status", "total_gross", "owner_lead"]}
+                    {"name": "column_unit_summary", "fields": ["unit_number", "sku", "project", "master_compound", "destination", "developer", "inventory_type", "listing_purpose", "unit_category", "physical_unit_type", "status", "delivery_status", "total_gross", "rental_monthly_rate", "owner_lead"]}
                 ],
             }
         ],
@@ -227,7 +229,7 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 "name": "unit_general_data_section",
                 "opened": True,
                 "columns": [
-                    {"name": "column_unit_data_a", "fields": ["unit_number", "sku", "project", "master_compound", "destination", "developer", "inventory_type", "unit_category", "physical_unit_type"]},
+                    {"name": "column_unit_data_a", "fields": ["unit_number", "sku", "project", "master_compound", "destination", "developer", "inventory_type", "listing_purpose", "unit_category", "physical_unit_type"]},
                     {"name": "column_unit_data_b", "fields": ["floor", "number_of_floors", "bua", "area_uom", "land_area", "garden_area", "roof_area", "terrace_area"]},
                     {"name": "column_unit_data_c", "fields": ["bedrooms", "bathrooms", "has_nanny_room", "has_driver_room", "has_storage_room", "has_parking", "finishing_type", "delivery_date", "delivery_status", "status", "owner_lead"]},
                 ],
@@ -242,7 +244,7 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                 ],
             },
             {
-                "label": "Rental Information",
+                "label": "Rent Information",
                 "name": "unit_rental_data_section",
                 "opened": True,
                 "columns": [
@@ -453,13 +455,15 @@ REAL_ESTATE_STANDARD_VIEWS = [
             {"label": "Compound", "type": "Link", "key": "project", "width": "14rem"},
             {"label": "Destination", "type": "Link", "key": "destination", "width": "14rem"},
             {"label": "Inventory Type", "type": "Select", "key": "inventory_type", "width": "10rem"},
+            {"label": "Listing Purpose", "type": "Select", "key": "listing_purpose", "width": "10rem"},
             {"label": "Unit Type", "type": "Link", "key": "physical_unit_type", "width": "10rem"},
             {"label": "Availability", "type": "Select", "key": "status", "width": "10rem"},
             {"label": "Total Gross", "type": "Currency", "key": "total_gross", "width": "10rem"},
-            {"label": "Seller Owner", "type": "Link", "key": "owner_lead", "width": "14rem"},
+            {"label": "Monthly Rent", "type": "Currency", "key": "rental_monthly_rate", "width": "10rem"},
+            {"label": "Owner Lead", "type": "Link", "key": "owner_lead", "width": "14rem"},
             {"label": "Last Modified", "type": "Datetime", "key": "modified", "width": "8rem"},
         ],
-        "rows": ["name", "unit_number", "sku", "project", "master_compound", "destination", "developer", "inventory_type", "unit_category", "physical_unit_type", "status", "total_gross", "owner_lead", "modified"],
+        "rows": ["name", "unit_number", "sku", "project", "master_compound", "destination", "developer", "inventory_type", "listing_purpose", "unit_category", "physical_unit_type", "status", "total_gross", "rental_monthly_rate", "owner_lead", "modified"],
     },
     {
         "label": "Unit Types",
@@ -503,8 +507,8 @@ REAL_ESTATE_STANDARD_VIEWS = [
 ]
 
 REAL_ESTATE_QUICK_FILTERS = {
-    "CRM Lead": ["lead_name", "email", "status", "source", "party_type", "lead_owner", "buyer_budget", "preferred_destination", "preferred_unit_type", "preferred_developer", "preferred_compound", "selection_tier"],
-    "Real Estate Unit": ["unit_number", "sku", "project", "master_compound", "destination", "developer", "inventory_type", "unit_category", "physical_unit_type", "floor", "finishing_type", "status", "delivery_status", "owner_lead"],
+    "CRM Lead": ["lead_name", "email", "status", "source", "party_type", "owner_intent", "lead_owner", "buyer_budget", "preferred_destination", "preferred_unit_type", "preferred_developer", "preferred_compound", "selection_tier"],
+    "Real Estate Unit": ["unit_number", "sku", "project", "master_compound", "destination", "developer", "inventory_type", "listing_purpose", "unit_category", "physical_unit_type", "floor", "finishing_type", "status", "delivery_status", "owner_lead"],
     "Property Developer": ["developer_name", "founded_year", "company_registration"],
     "Real Estate Project": ["project_name", "record_type", "parent_compound", "destination", "developer", "status"],
     "Real Estate Destination": ["destination_name", "destination_code", "is_active"],
@@ -803,7 +807,7 @@ REAL_ESTATE_UNIT_DEFAULTS_SCRIPT = r"""
 frappe.ui.form.on('Real Estate Unit', {
     setup(frm) {
         frm.set_query('project', () => ({ filters: {} }));
-        frm.set_query('owner_lead', () => ({ filters: { party_type: 'Seller' } }));
+        frm.set_query('owner_lead', () => ({ filters: { party_type: 'Owner' } }));
         frm.set_query('physical_unit_type', () => ({
             filters: Object.assign(
                 { is_active: 1 },
@@ -846,11 +850,21 @@ frappe.ui.form.on('CRM Lead', {
         // Do NOT set mobile_no or phone as individually mandatory.
         // Validation below ensures at least one phone field is filled.
 
-        if (!frm.is_new() && frm.doc.party_type === 'Seller') {
+        if (!frm.is_new() && frm.doc.party_type === 'Owner') {
             frm.add_custom_button(__('Add Property'), () => {
+                const ownerIntent = frm.doc.owner_intent || 'Sell';
+                const defaultPurpose = { Sell: 'For Sale', Rent: 'For Rent', 'Sell or Rent': 'For Sale or Rent' }[ownerIntent] || 'For Sale';
                 const addDialog = new frappe.ui.Dialog({
-                    title: __('Add Seller Property'),
+                    title: __('Add Owner Property'),
                     fields: [
+                        {
+                            fieldname: 'listing_purpose',
+                            fieldtype: 'Select',
+                            label: __('Listing Purpose'),
+                            options: 'For Sale\nFor Rent\nFor Sale or Rent',
+                            default: defaultPurpose,
+                            reqd: 1,
+                        },
                         {
                             fieldname: 'project',
                             fieldtype: 'Link',
@@ -921,6 +935,18 @@ frappe.ui.form.on('CRM Lead', {
                             fieldtype: 'Currency',
                             label: __('Remaining'),
                         },
+                        {
+                            fieldname: 'rental_monthly_rate',
+                            fieldtype: 'Currency',
+                            label: __('Monthly Rent'),
+                            depends_on: "eval:doc.listing_purpose!='For Sale'",
+                        },
+                        {
+                            fieldname: 'rental_daily_rate',
+                            fieldtype: 'Currency',
+                            label: __('Daily Rent'),
+                            depends_on: "eval:doc.listing_purpose!='For Sale'",
+                        },
                     ],
                     primary_action_label: __('Create Property'),
                     primary_action(values) {
@@ -940,10 +966,13 @@ frappe.ui.form.on('CRM Lead', {
                                 over_price: values.over_price,
                                 over_is_gross: values.over_is_gross,
                                 remaining: values.remaining,
+                                listing_purpose: values.listing_purpose,
+                                rental_monthly_rate: values.rental_monthly_rate,
+                                rental_daily_rate: values.rental_daily_rate,
                             },
                             callback() {
                                 frm.reload_doc();
-                                frappe.msgprint(__('Seller property created successfully.'));
+                                frappe.msgprint(__('Owner property created successfully.'));
                                 addDialog.hide();
                             },
                         });
@@ -970,14 +999,14 @@ frappe.ui.form.on('CRM Lead', {
                     primary_action_label: __('Assign'),
                     primary_action(values) {
                         frappe.call({
-                            method: 'real_estate_crm_customs.api.assign_property_unit_to_seller',
+                            method: 'real_estate_crm_customs.api.assign_property_unit_to_owner',
                             args: {
                                 lead: frm.doc.name,
                                 unit: values.unit,
                             },
                             callback() {
                                 frm.reload_doc();
-                                frappe.msgprint(__('Property unit {0} assigned to this seller lead.', [values.unit]));
+                                frappe.msgprint(__('Property unit {0} assigned to this Owner lead.', [values.unit]));
                                 dialog.hide();
                             },
                         });
@@ -1103,7 +1132,7 @@ def ensure_crm_lead_main_form_sections():
         section_opened=True,
         section_collapsible=True,
     )
-    # Section 2: Interest preferences (buyer/seller details without flags)
+    # Section 2: Interest preferences (buyer/owner details without flags)
     append_fields_to_layout(
         doctype="CRM Lead",
         layout_type="Data Fields",

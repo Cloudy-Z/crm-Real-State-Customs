@@ -9,6 +9,7 @@
   "lead",
   "record_type",
   "category",
+  "deal_type",
   "workflow_status",
   "is_active",
   "section_inventory",
@@ -20,6 +21,7 @@
   "request_notes",
   "requested_destination",
   "requested_area",
+  "requested_unit_category",
   "requested_unit_type",
   "requested_budget",
   "requested_budget_set",
@@ -27,6 +29,8 @@
   "requested_down_payment_budget_set",
   "requested_monthly_installment_budget",
   "requested_monthly_installment_budget_set",
+  "requested_rent_budget",
+  "requested_rent_budget_set",
   "requested_delivery_date",
   "inventory_search_scope",
   "budget_currency",
@@ -86,6 +90,17 @@
    "in_standard_filter": 1,
    "label": "Category",
    "options": "Resale\nPrimary\nBrokerage Request\nInternational\nOutsource",
+   "reqd": 1
+  },
+  {
+   "default": "Buy",
+   "description": "Buy or Rent. Rent is available for Resale and Brokerage requirements and matches only Units listed for rent.",
+   "fieldname": "deal_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Deal Type",
+   "options": "Buy\nRent",
    "reqd": 1
   },
   {
@@ -168,6 +183,13 @@
    "read_only": 1
   },
   {
+   "description": "Narrows the Requested Unit Type. It is synced from the Unit Type when one is selected.",
+   "fieldname": "requested_unit_category",
+   "fieldtype": "Link",
+   "label": "Requested Unit Category",
+   "options": "Real Estate Unit Category"
+  },
+  {
    "fieldname": "requested_unit_type",
    "fieldtype": "Link",
    "label": "Requested Unit Type",
@@ -191,6 +213,22 @@
    "label": "Requested Maximum Monthly Installment Budget",
    "options": "budget_currency",
    "description": "Optional maximum monthly affordability snapshot; no payment-plan amount is inferred."
+  },
+  {
+   "depends_on": "eval:doc.deal_type == 'Rent'",
+   "description": "Maximum monthly rent for a Rent requirement.",
+   "fieldname": "requested_rent_budget",
+   "fieldtype": "Currency",
+   "label": "Requested Maximum Monthly Rent",
+   "options": "budget_currency"
+  },
+  {
+   "default": "0",
+   "fieldname": "requested_rent_budget_set",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Requested Monthly Rent Provided",
+   "read_only": 1
   },
   {
    "fieldname": "requested_delivery_date",
@@ -427,7 +465,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-09-16 00:00:00.000000",
+ "modified": "2026-10-28 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Real Estate CRM Customs",
  "name": "Lead Interest",

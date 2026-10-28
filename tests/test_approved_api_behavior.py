@@ -140,7 +140,7 @@ def policy_namespace():
     }
     extract_functions(
         POLICY,
-        {"money", "delivery_date", "inventory_categories", "is_property_requirement", "requirement_snapshot", "requirement_amount"},
+        {"deal_type", "listing_purposes_for_deal", "money", "delivery_date", "inventory_categories", "is_property_requirement", "requirement_snapshot", "requirement_amount"},
         namespace,
     )
     return namespace
@@ -158,6 +158,8 @@ def api_namespace(db=None, **overrides):
         "requirement_snapshot": policy["requirement_snapshot"],
         "requirement_amount": policy["requirement_amount"],
         "_inventory_categories": policy["inventory_categories"],
+        "listing_purposes_for_deal": policy["listing_purposes_for_deal"],
+        "_is_owner_role": lambda value: str(value or "").strip().lower() in {"owner", "seller", "owner lead", "seller lead"},
         "_site_currency": lambda: "EGP",
         "_to_int": lambda value: int(value or 0),
         "_parse_json_object": lambda value, _label: value or {},
@@ -529,7 +531,7 @@ class ClosingAndConcurrencyBehaviorTests(unittest.TestCase):
         db = FakeDB(units={"U-1": AttrDict(status="Sold", closing_interest=None)})
         namespace = api_namespace(db)
         validate = extract_functions(API, {"_validate_interest_unit_commitment"}, namespace)["_validate_interest_unit_commitment"]
-        with self.assertRaisesRegex(FrappeError, "sold or reserved"):
+        with self.assertRaisesRegex(FrappeError, "sold, rented, or reserved"):
             validate(AttrDict(name="INT-1", unit="U-1"))
         self.assertEqual(db.calls[0][0], "sql")
         self.assertIn("FOR UPDATE", db.calls[0][1])

@@ -10,7 +10,7 @@ from real_estate_crm_customs.master_data import (
     ensure_default_unit_types,
     ensure_legacy_unit_type,
 )
-from real_estate_crm_customs.party_roles import normalize_party_role
+from real_estate_crm_customs.party_roles import is_owner_role, normalize_party_role
 
 
 def execute():
@@ -155,7 +155,7 @@ def migrate_unit_fields(destinations):
             else None
         )
         if not unit.inventory_type:
-            if owner_role == "Seller":
+            if is_owner_role(owner_role):
                 values["inventory_type"] = "Resale"
             elif not unit.owner_lead:
                 values["inventory_type"] = "Primary"
@@ -164,7 +164,7 @@ def migrate_unit_fields(destinations):
                     "Unresolved Real Estate Unit classification",
                     f"{unit.name}: owner_lead={unit.owner_lead!r}; party_type is unavailable before fixture sync",
                 )
-        if unit.owner_lead and has_party_type and owner_role != "Seller":
+        if unit.owner_lead and has_party_type and not is_owner_role(owner_role):
             _log_issue(
                 "Invalid Real Estate Unit owner",
                 f"{unit.name}: preserved owner_lead={unit.owner_lead!r}; party_type={owner_role!r}; manual review required",

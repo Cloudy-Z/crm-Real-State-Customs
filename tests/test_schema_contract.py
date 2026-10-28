@@ -154,16 +154,23 @@ class SchemaContractTests(unittest.TestCase):
         schema = load_doctype("real_estate_unit")
         fields = {field["fieldname"]: field for field in schema["fields"]}
         self.assertEqual(fields["inventory_type"]["options"].splitlines(), [
-            "Rental",
             "Resale",
             "Primary",
             "International",
         ])
+        # Renting is a Listing Purpose of a Resale Unit, not an inventory type.
+        self.assertEqual(
+            fields["listing_purpose"]["options"].splitlines(),
+            ["For Sale", "For Rent", "For Sale or Rent"],
+        )
+        self.assertEqual(fields["listing_purpose"].get("reqd"), 1)
+        self.assertEqual(fields["listing_purpose"].get("default"), "For Sale")
+        self.assertIn("Rented", fields["status"]["options"].splitlines())
         self.assertEqual(fields["physical_unit_type"]["options"], "Real Estate Unit Type")
         self.assertEqual(fields["destination"]["options"], "Real Estate Destination")
         self.assertEqual(
             json.loads(fields["owner_lead"]["link_filters"]),
-            [["CRM Lead", "party_type", "=", "Seller"]],
+            [["CRM Lead", "party_type", "=", "Owner"]],
         )
         for output in (
             "over_net",
@@ -203,7 +210,11 @@ class SchemaContractTests(unittest.TestCase):
             if record.get("dt") == "CRM Lead"
         }
         self.assertIn("party_type", lead_fields)
-        self.assertEqual(lead_fields["party_type"]["options"].splitlines(), ["Buyer", "Seller"])
+        self.assertEqual(lead_fields["party_type"]["options"].splitlines(), ["Buyer", "Owner"])
+        self.assertEqual(
+            lead_fields["owner_intent"]["options"].splitlines(), ["Sell", "Rent", "Sell or Rent"]
+        )
+        self.assertIn("Owner", lead_fields["owner_intent"].get("depends_on") or "")
         self.assertEqual(lead_fields["preferred_destination"]["options"], "Real Estate Destination")
         self.assertEqual(lead_fields["preferred_unit_type"]["options"], "Real Estate Unit Type")
         self.assertEqual(lead_fields["interested_in_units"].get("read_only"), 1)
@@ -262,7 +273,8 @@ class SchemaContractTests(unittest.TestCase):
         self.assertIn('"Lead Interest", "lead"', migration_source)
         self.assertIn("resolve_party_role(", migration_source)
         self.assertIn('"CRM View Settings"', migration_source)
-        self.assertIn('"Buyers" if role == "Buyer" else "Sellers"', migration_source)
+        self.assertIn("list_route_for_role(role)", migration_source)
+        self.assertIn("LEGACY_OWNER_LIST_ROUTE", migration_source)
         self.assertIn("normalize_lead_view_filters", migration_source)
         self.assertIn("normalize_lead_view_columns", migration_source)
         self.assertIn("normalize_lead_view_rows", migration_source)

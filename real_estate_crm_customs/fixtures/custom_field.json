@@ -15,14 +15,27 @@
   "fieldname": "party_type",
   "label": "Party Role",
   "fieldtype": "Select",
-  "options": "Buyer\nSeller",
+  "options": "Buyer\nOwner",
   "default": "Buyer",
   "insert_after": "real_estate_section",
   "in_list_view": 1,
   "in_standard_filter": 1,
   "name": "CRM Lead-party_type",
   "reqd": 1,
-  "description": "Canonical Buyer/Seller role used by real-estate ownership and workflow rules."
+  "description": "Canonical Buyer/Owner role used by real-estate ownership and workflow rules."
+ },
+ {
+  "doctype": "Custom Field",
+  "dt": "CRM Lead",
+  "fieldname": "owner_intent",
+  "label": "Owner Intent",
+  "fieldtype": "Select",
+  "options": "Sell\nRent\nSell or Rent",
+  "default": "Sell",
+  "insert_after": "party_type",
+  "depends_on": "eval:doc.party_type == 'Owner'",
+  "name": "CRM Lead-owner_intent",
+  "description": "Whether this Owner wants to sell, rent out, or either. New Units added from this Owner use it as their Listing Purpose."
  },
  {
   "doctype": "Custom Field",

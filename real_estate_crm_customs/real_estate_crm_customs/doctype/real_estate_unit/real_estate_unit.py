@@ -5,6 +5,8 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import getdate, nowdate
 
+from real_estate_crm_customs.party_roles import OWNER_ROLE, is_owner_role
+from real_estate_crm_customs.requirement_policy import listing_purposes_for_deal  # noqa: F401 (re-export)
 from real_estate_crm_customs.unit_financials import UnitFinancialError, calculate_unit_financials
 from real_estate_crm_customs.workflow_context import unit_mutation_active
 
@@ -18,7 +20,27 @@ LEGACY_UNIT_TYPE_ABBREVIATIONS = {
     "Studio": "STD",
     "Townhouse": "TWN",
 }
-INVENTORY_TYPES = {"Rental", "Resale", "Primary", "International"}
+INVENTORY_TYPES = {"Resale", "Primary", "International"}
+LISTING_FOR_SALE = "For Sale"
+LISTING_FOR_RENT = "For Rent"
+LISTING_FOR_SALE_OR_RENT = "For Sale or Rent"
+LISTING_PURPOSES = (LISTING_FOR_SALE, LISTING_FOR_RENT, LISTING_FOR_SALE_OR_RENT)
+# Owner Intent on the Owner lead -> default Listing Purpose of that Owner's new Units.
+OWNER_INTENT_LISTING_PURPOSE = {
+    "Sell": LISTING_FOR_SALE,
+    "Rent": LISTING_FOR_RENT,
+    "Sell or Rent": LISTING_FOR_SALE_OR_RENT,
+}
+
+
+def is_listed_for_sale(listing_purpose):
+    return (listing_purpose or LISTING_FOR_SALE) in (LISTING_FOR_SALE, LISTING_FOR_SALE_OR_RENT)
+
+
+def is_listed_for_rent(listing_purpose):
+    return listing_purpose in (LISTING_FOR_RENT, LISTING_FOR_SALE_OR_RENT)
+
+
 AREA_FIELDS = ("bua", "land_area", "garden_area", "roof_area", "terrace_area")
 COUNT_FIELDS = ("bedrooms", "bathrooms", "number_of_floors")
 FINANCIAL_INPUT_FIELDS = ("paid", "over_price", "remaining", "over_is_gross")
@@ -34,7 +56,7 @@ class RealEstateUnit(Document):
         sync_unit_category(self)
         if self.is_new() or self.has_value_changed("delivery_date"):
             set_delivery_status(self)
-        if self.is_new() or any(self.has_value_changed(fieldname) for fieldname in FINANCIAL_INPUT_FIELDS):
+        if self.is_new() or any(self.has_value_changed(fieldname) for fieldname in FINANCIAL_INPUT_FIELDS + ("listing_purpose",)):
             set_financial_values(self)
 
     def before_insert(self):
@@ -54,11 +76,27 @@ class RealEstateUnit(Document):
 def set_dynamic_defaults(doc):
     if not doc.status:
         doc.status = "Available"
+    if doc.meta.has_field("listing_purpose") and not doc.get("listing_purpose"):
+        doc.listing_purpose = default_listing_purpose(doc.get("owner_lead"))
     if not doc.area_uom:
         doc.area_uom = "Sq M"
     # Preserve the legacy audit field without treating it as authoritative.
     if doc.meta.has_field("created_by") and not doc.created_by:
         doc.created_by = frappe.session.user
+
+
+def default_listing_purpose(owner_lead=None):
+    if owner_lead:
+        intent = frappe.db.get_value("CRM Lead", owner_lead, "owner_intent") if _lead_has_owner_intent() else None
+        return OWNER_INTENT_LISTING_PURPOSE.get(intent, LISTING_FOR_SALE)
+    return LISTING_FOR_SALE
+
+
+def _lead_has_owner_intent():
+    try:
+        return bool(frappe.get_meta("CRM Lead").has_field("owner_intent"))
+    except Exception:
+        return False
 
 
 def set_parent_projections(doc):
@@ -103,6 +141,11 @@ def set_delivery_status(doc):
 
 
 def set_financial_values(doc):
+    if not is_listed_for_sale(doc.get("listing_purpose")):
+        # A rent-only Unit has no sale price; keep the inputs and clear derived totals at zero.
+        for fieldname in ("paid", "over_price", "remaining"):
+            if doc.get(fieldname) in (None, ""):
+                doc.set(fieldname, 0)
     try:
         values = calculate_unit_financials(
             paid=doc.get("paid"),
@@ -123,6 +166,17 @@ def validate_unit(doc):
         validate_inventory_type(doc)
     if doc.is_new() or _changed(doc, "inventory_type", "owner_lead"):
         validate_owner_lead(doc)
+    if doc.is_new() or _changed(
+        doc,
+        "inventory_type",
+        "listing_purpose",
+        "paid",
+        "over_price",
+        "remaining",
+        "rental_monthly_rate",
+        "rental_daily_rate",
+    ):
+        validate_listing_purpose(doc)
     if doc.is_new() or _changed(doc, "project", "unit_number"):
         validate_unit_number(doc)
     if doc.is_new() or _changed(doc, "project", "physical_unit_type"):
@@ -132,6 +186,7 @@ def validate_unit(doc):
     if doc.is_new() or _changed(
         doc,
         "inventory_type",
+        "listing_purpose",
         "rental_monthly_rate",
         "rental_daily_rate",
     ):
@@ -176,24 +231,24 @@ def validate_new_unit_completeness(doc):
 
 def validate_inventory_type(doc):
     if doc.inventory_type not in INVENTORY_TYPES:
-        frappe.throw(_("Inventory Type must be Rental, Resale, Primary, or International."))
+        frappe.throw(_("Inventory Type must be Resale, Primary, or International. For rentals, use Resale with Listing Purpose For Rent."))
     if doc.inventory_type != "Resale" and (doc.get("paid") or 0) > 0:
         frappe.throw(_("Paid is allowed only for Resale inventory."), frappe.ValidationError)
 
 
 def validate_owner_lead(doc):
     if doc.inventory_type == "Resale" and not doc.owner_lead:
-        frappe.throw(_("A Resale unit requires a Seller Owner."), frappe.ValidationError)
+        frappe.throw(_("A Resale unit requires an Owner Lead."), frappe.ValidationError)
     if doc.inventory_type == "Primary" and doc.owner_lead:
-        frappe.throw(_("A Primary unit cannot have a Seller Owner."), frappe.ValidationError)
+        frappe.throw(_("A Primary unit cannot have an Owner Lead."), frappe.ValidationError)
     if not doc.owner_lead:
         return
     party_type = frappe.db.get_value("CRM Lead", doc.owner_lead, "party_type")
     if not party_type:
         frappe.throw(_("Owner Lead {0} was not found.").format(doc.owner_lead), frappe.DoesNotExistError)
-    if party_type != "Seller":
+    if not is_owner_role(party_type):
         frappe.throw(
-            _("Unit owners must be Seller leads. {0} is marked as {1}.").format(
+            _("Unit owners must be Owner leads. {0} is marked as {1}.").format(
                 doc.owner_lead,
                 party_type,
             ),
@@ -253,15 +308,41 @@ def validate_non_negative_details(doc):
             frappe.throw(_("{0} cannot be negative.").format(doc.meta.get_label(fieldname)))
 
 
+def validate_listing_purpose(doc):
+    purpose = doc.get("listing_purpose") or LISTING_FOR_SALE
+    if purpose not in LISTING_PURPOSES:
+        frappe.throw(
+            _("Listing Purpose must be For Sale, For Rent, or For Sale or Rent."),
+            frappe.ValidationError,
+        )
+    if is_listed_for_rent(purpose) and doc.inventory_type != "Resale":
+        frappe.throw(
+            _("Only Resale units owned by an Owner lead can be listed for rent."),
+            frappe.ValidationError,
+        )
+    if is_listed_for_sale(purpose) and float(doc.get("total_price_net") or 0) <= 0 and float(doc.get("price") or 0) <= 0:
+        frappe.throw(
+            _("A Unit listed for sale needs a sale price. Enter Paid, Over Price, and Remaining."),
+            frappe.ValidationError,
+        )
+
+
 def validate_rental_rates(doc):
     monthly = float(doc.get("rental_monthly_rate") or 0)
     daily = float(doc.get("rental_daily_rate") or 0)
     if monthly < 0 or daily < 0:
-        frappe.throw(_("Rental rates cannot be negative."), frappe.ValidationError)
-    if doc.inventory_type == "Rental" and monthly <= 0 and daily <= 0:
-        frappe.throw(_("Rental inventory requires a monthly or daily rent."), frappe.ValidationError)
-    if doc.inventory_type != "Rental" and (monthly > 0 or daily > 0):
-        frappe.throw(_("Rental rates are allowed only for Rental inventory."), frappe.ValidationError)
+        frappe.throw(_("Rent amounts cannot be negative."), frappe.ValidationError)
+    purpose = doc.get("listing_purpose") or LISTING_FOR_SALE
+    if is_listed_for_rent(purpose) and monthly <= 0 and daily <= 0:
+        frappe.throw(
+            _("A Unit listed for rent needs a monthly rent or a daily rent."),
+            frappe.ValidationError,
+        )
+    if not is_listed_for_rent(purpose) and (monthly > 0 or daily > 0):
+        frappe.throw(
+            _("Rent amounts are allowed only when Listing Purpose is For Rent or For Sale or Rent."),
+            frappe.ValidationError,
+        )
 
 
 def generate_unit_sku(doc):

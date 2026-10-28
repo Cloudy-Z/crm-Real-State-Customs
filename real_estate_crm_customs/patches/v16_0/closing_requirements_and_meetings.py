@@ -8,6 +8,7 @@ from datetime import date
 
 import frappe
 
+from real_estate_crm_customs.party_roles import is_owner_role
 from real_estate_crm_customs.requirement_policy import RequirementError, delivery_date
 
 
@@ -194,7 +195,7 @@ def _pending_resale_owner_scope_is_valid(action):
     )
     if not unit or unit.inventory_type != "Resale" or not unit.owner_lead:
         return False
-    return frappe.db.get_value("CRM Lead", unit.owner_lead, "party_type") == "Seller"
+    return is_owner_role(frappe.db.get_value("CRM Lead", unit.owner_lead, "party_type"))
 
 
 def _mark_meeting_for_review(action):

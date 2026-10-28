@@ -1,6 +1,8 @@
 import unittest
 
 from real_estate_crm_customs.party_roles import (
+    is_owner_role,
+    list_route_for_role,
     normalize_lead_view_columns,
     normalize_lead_view_filters,
     normalize_lead_view_rows,
@@ -13,9 +15,18 @@ from real_estate_crm_customs.party_roles import (
 
 
 class PartyRoleTests(unittest.TestCase):
-    def test_seller_aliases(self):
-        for value in ("Seller", "seller lead", " Owner ", "SELL"):
-            self.assertEqual(normalize_party_role(value), "Seller")
+    def test_owner_aliases_include_the_legacy_seller_value(self):
+        for value in ("Seller", "seller lead", " Owner ", "owner lead", "SELL", "Landlord"):
+            self.assertEqual(normalize_party_role(value), "Owner")
+            self.assertTrue(is_owner_role(value))
+        self.assertFalse(is_owner_role("Buyer"))
+        self.assertFalse(is_owner_role(None))
+
+    def test_owner_list_route_replaces_sellers(self):
+        self.assertEqual(list_route_for_role("Owner"), "Owners")
+        self.assertEqual(list_route_for_role("Seller"), "Owners")
+        self.assertEqual(list_route_for_role("Buyer"), "Buyers")
+        self.assertIsNone(list_route_for_role("Investor"))
 
     def test_buyer_aliases(self):
         for value in ("Buyer", "buyer lead", " Purchaser ", "BUY"):
@@ -28,7 +39,7 @@ class PartyRoleTests(unittest.TestCase):
     def test_relationship_evidence_has_priority(self):
         self.assertEqual(
             resolve_party_role("Buyer", (), owns_unit=True),
-            ("Seller", "unit_owner"),
+            ("Owner", "unit_owner"),
         )
         self.assertEqual(
             resolve_party_role("Seller", (), has_interest=True),
@@ -36,13 +47,13 @@ class PartyRoleTests(unittest.TestCase):
         )
         self.assertEqual(
             resolve_party_role("Buyer", (), owns_unit=True, has_interest=True),
-            ("Seller", "relationship_conflict"),
+            ("Owner", "relationship_conflict"),
         )
 
     def test_unambiguous_legacy_alias_repairs_stale_canonical_default(self):
         self.assertEqual(
             resolve_party_role("Buyer", ("Seller",)),
-            ("Seller", "legacy_alias_conflict"),
+            ("Owner", "legacy_alias_conflict"),
         )
         self.assertEqual(
             resolve_party_role("", ("buyer lead",)),
@@ -63,8 +74,13 @@ class PartyRoleTests(unittest.TestCase):
         )
         self.assertEqual(
             party_role_from_view_filters({"party_type": ["=", "Seller"]}),
-            "Seller",
+            "Owner",
         )
+        # A saved view still filtering the legacy stored value is rewritten to Owner.
+        cleaned, role, changed = normalize_lead_view_filters('{"party_type": "Seller"}')
+        self.assertEqual(cleaned, {"party_type": "Owner"})
+        self.assertEqual(role, "Owner")
+        self.assertTrue(changed)
         cleaned, role, changed = normalize_lead_view_filters(
             '{"custom_type": "Buyer"}'
         )
@@ -76,11 +92,12 @@ class PartyRoleTests(unittest.TestCase):
         )
         self.assertEqual(
             cleaned,
-            {"party_type": "Seller", "status": "New"},
+            {"party_type": "Owner", "status": "New"},
         )
-        self.assertEqual(role, "Seller")
+        self.assertEqual(role, "Owner")
         self.assertTrue(changed)
-        self.assertIsNone(party_role_from_view_filters({"party_type": "Owner"}))
+        self.assertEqual(party_role_from_view_filters({"party_type": "Owner"}), "Owner")
+        self.assertIsNone(party_role_from_view_filters({"party_type": "Investor"}))
         self.assertIsNone(party_role_from_view_filters("not-json"))
 
     def test_normalizes_legacy_saved_view_columns_and_rows(self):

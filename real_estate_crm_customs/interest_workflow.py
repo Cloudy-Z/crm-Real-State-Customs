@@ -16,7 +16,15 @@ from real_estate_crm_customs.migration_policy import (
     normalize_legacy_interest_binding,
     parse_legacy_scope_identifiers,
 )
-from real_estate_crm_customs.requirement_policy import RequirementError, delivery_date
+from real_estate_crm_customs.party_roles import is_buyer_role, is_owner_role
+from real_estate_crm_customs.requirement_policy import DEAL_RENT, RequirementError, delivery_date
+
+# Final Unit states written by a signed contract. A Rent deal leases the Unit; a Buy deal sells it.
+UNIT_FINAL_STATUSES = ("Sold", "Rented")
+
+
+def unit_final_status_for(interest):
+    return "Rented" if interest.get("deal_type") == DEAL_RENT else "Sold"
 from real_estate_crm_customs.workflow_context import (
     creation_context_mode,
     interest_creation_context,
@@ -93,8 +101,10 @@ STATUS_RANK = {
 LEGACY_COPY_FIELDS = (
     "request_status",
     "request_notes",
+    "deal_type",
     "requested_destination",
     "requested_area",
+    "requested_unit_category",
     "requested_unit_type",
     "requested_budget",
     "requested_budget_set",
@@ -102,6 +112,8 @@ LEGACY_COPY_FIELDS = (
     "requested_down_payment_budget_set",
     "requested_monthly_installment_budget",
     "requested_monthly_installment_budget_set",
+    "requested_rent_budget",
+    "requested_rent_budget_set",
     "requested_delivery_date",
     "inventory_search_scope",
     "budget_currency",
@@ -126,8 +138,12 @@ LEGACY_COPY_FIELDS = (
 # because that source did not yet have the new column.  A saved authoritative
 # snapshot must win over that absence; it is not a request to erase it.
 SNAPSHOT_COPY_FIELDS = {
+    "deal_type",
     "requested_destination",
+    "requested_unit_category",
     "requested_unit_type",
+    "requested_rent_budget",
+    "requested_rent_budget_set",
     "requested_budget",
     "requested_budget_set",
     "requested_down_payment_budget",
@@ -220,7 +236,7 @@ def _legacy_interest_values(lead_doc, row):
     for fieldname in LEGACY_COPY_FIELDS:
         values[fieldname] = row.get(fieldname)
     if not row.get("requirement_budget_presence_version"):
-        for amount in ("requested_budget", "requested_down_payment_budget", "requested_monthly_installment_budget"):
+        for amount in ("requested_budget", "requested_down_payment_budget", "requested_monthly_installment_budget", "requested_rent_budget"):
             raw = values.get(amount)
             values[amount + "_set"] = int(raw is not None and float(raw) > 0)
         values["requirement_budget_presence_version"] = 1
@@ -564,7 +580,7 @@ def _lock_unit(unit_name):
     """Lock the Unit first, before its Interest, to avoid closing contention."""
     rows = frappe.db.sql(
         """
-        SELECT `name`, `status`, `inventory_type`, `owner_lead`, `closing_interest`, `sold_interest`
+        SELECT `name`, `status`, `inventory_type`, `listing_purpose`, `owner_lead`, `closing_interest`, `sold_interest`
         FROM `tabReal Estate Unit` WHERE `name` = %s FOR UPDATE
         """,
         (unit_name,),
@@ -601,14 +617,19 @@ def _validate_closing_binding(interest, unit):
         frappe.throw(_("Contract closing is available only for Resale or Primary inventory."), frappe.ValidationError)
     if interest.unit != unit.name or unit.inventory_type != interest.category:
         frappe.throw(_("The Interest no longer matches its linked Unit."), frappe.ValidationError)
-    if frappe.db.get_value("CRM Lead", interest.lead, "party_type") != "Buyer":
+    if not is_buyer_role(frappe.db.get_value("CRM Lead", interest.lead, "party_type")):
         frappe.throw(_("Only a Buyer Interest can enter contract closing."), frappe.ValidationError)
     if interest.category == "Resale":
         owner_role = frappe.db.get_value("CRM Lead", unit.owner_lead, "party_type") if unit.owner_lead else None
-        if owner_role != "Seller":
-            frappe.throw(_("Resale contract closing requires a Seller-owned Unit."), frappe.ValidationError)
+        if not is_owner_role(owner_role):
+            frappe.throw(_("Resale contract closing requires an Owner-owned Unit."), frappe.ValidationError)
     elif unit.owner_lead:
-        frappe.throw(_("Primary contract closing cannot use a Seller-owned Unit."), frappe.ValidationError)
+        frappe.throw(_("Primary contract closing cannot use an Owner-owned Unit."), frappe.ValidationError)
+    listing = unit.get("listing_purpose") or "For Sale"
+    if interest.get("deal_type") == DEAL_RENT and listing not in ("For Rent", "For Sale or Rent"):
+        frappe.throw(_("A Rent contract requires a Unit listed for rent."), frappe.ValidationError)
+    if interest.get("deal_type") != DEAL_RENT and listing not in ("For Sale", "For Sale or Rent"):
+        frappe.throw(_("A sale contract requires a Unit listed for sale."), frappe.ValidationError)
 
 
 def _set_unit_closing_state(unit_name, *, status, closing_interest=None, sold_interest=None):
@@ -647,7 +668,7 @@ def begin_interest_closing(interest_name, action=None):
     _validate_closing_binding(interest, unit)
 
     if interest.workflow_status == "Closed Won":
-        if unit.status == "Sold" and unit.sold_interest == interest.name and _has_closed_won_evidence(interest):
+        if unit.status in UNIT_FINAL_STATUSES and unit.sold_interest == interest.name and _has_closed_won_evidence(interest):
             return interest
         frappe.throw(_("A Closed Won Interest cannot be returned to Closing."), frappe.ValidationError)
     if interest.workflow_status == "Closing":
@@ -709,7 +730,7 @@ def _assert_contract_replay_matches(interest, reference, signed_date, signed_con
 
 
 def finalize_interest_contract(interest_name, contract_reference, contract_signed_date, signed_contract=None, action=None):
-    """Record immutable signed evidence and atomically mark the reserved Unit Sold."""
+    """Record immutable signed evidence and atomically mark the reserved Unit Sold (or Rented)."""
     reference, signed_date = _normalized_contract_evidence(contract_reference, contract_signed_date)
     unit_name = _interest_unit_name(interest_name)
     unit = _lock_unit(unit_name)
@@ -718,8 +739,8 @@ def finalize_interest_contract(interest_name, contract_reference, contract_signe
 
     if interest.workflow_status == "Closed Won":
         _assert_contract_replay_matches(interest, reference, signed_date, signed_contract)
-        if unit.status != "Sold" or unit.sold_interest != interest.name:
-            frappe.throw(_("Closed Won Interest no longer owns the sold Unit record."), frappe.ValidationError)
+        if unit.status not in UNIT_FINAL_STATUSES or unit.sold_interest != interest.name:
+            frappe.throw(_("Closed Won Interest no longer owns the sold or rented Unit record."), frappe.ValidationError)
         return interest
     if interest.workflow_status != "Closing":
         frappe.throw(_("Only an Interest in Closing can record a signed contract."), frappe.ValidationError)
@@ -742,7 +763,7 @@ def finalize_interest_contract(interest_name, contract_reference, contract_signe
         interest.save(ignore_permissions=True)
     _set_unit_closing_state(
         unit.name,
-        status="Sold",
+        status=unit_final_status_for(interest),
         closing_interest=interest.name,
         sold_interest=interest.name,
     )
@@ -1076,13 +1097,13 @@ def _validate_rollup_interests(interests):
                     if unit.owner_lead
                     else None
                 )
-                if owner_role != "Seller":
+                if not is_owner_role(owner_role):
                     raise LegacyInterestDataError(
-                        f"Lead Interest {interest.name} uses Resale inventory without a Seller owner"
+                        f"Lead Interest {interest.name} uses Resale inventory without an Owner lead"
                     )
             if interest.category == "Primary" and unit.owner_lead:
                 raise LegacyInterestDataError(
-                    f"Lead Interest {interest.name} uses seller-owned Primary inventory"
+                    f"Lead Interest {interest.name} uses owner-owned Primary inventory"
                 )
         elif interest.unit:
             raise LegacyInterestDataError(
@@ -1102,7 +1123,7 @@ def reconcile_lead_rollup(lead, action_label="Interest workflow rollup"):
     if not is_available() or not frappe.db.exists("CRM Lead", lead):
         return None
     lead_doc = frappe.get_doc("CRM Lead", lead)
-    if lead_doc.get("party_type") == "Seller":
+    if is_owner_role(lead_doc.get("party_type")):
         return lead_doc.get("status")
     interests = get_interests(lead, include_closed=True)
     _validate_rollup_interests(interests)

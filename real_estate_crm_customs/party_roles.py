@@ -3,17 +3,47 @@
 import json
 
 
+BUYER_ROLE = "Buyer"
+OWNER_ROLE = "Owner"
+# Stored before the 2026-10 rename; read only to migrate or accept old links.
+LEGACY_OWNER_ROLE = "Seller"
+CANONICAL_PARTY_ROLES = (BUYER_ROLE, OWNER_ROLE)
+OWNER_LIST_ROUTE = "Owners"
+BUYER_LIST_ROUTE = "Buyers"
+LEGACY_OWNER_LIST_ROUTE = "Sellers"
+
 PARTY_ROLE_ALIASES = {
-    "buyer": "Buyer",
-    "buyer lead": "Buyer",
-    "buy": "Buyer",
-    "purchaser": "Buyer",
-    "seller": "Seller",
-    "seller lead": "Seller",
-    "sell": "Seller",
-    "owner": "Seller",
+    "buyer": BUYER_ROLE,
+    "buyer lead": BUYER_ROLE,
+    "buy": BUYER_ROLE,
+    "purchaser": BUYER_ROLE,
+    "tenant": BUYER_ROLE,
+    "owner": OWNER_ROLE,
+    "owner lead": OWNER_ROLE,
+    "seller": OWNER_ROLE,
+    "seller lead": OWNER_ROLE,
+    "sell": OWNER_ROLE,
+    "landlord": OWNER_ROLE,
 }
 LEGACY_ROLE_FILTER_FIELDS = ("custom_type", "lead_type")
+
+
+def is_owner_role(value):
+    """True for the canonical Owner role and its legacy stored value Seller."""
+    return normalize_party_role(value) == OWNER_ROLE
+
+
+def is_buyer_role(value):
+    return normalize_party_role(value) == BUYER_ROLE
+
+
+def list_route_for_role(role):
+    role = normalize_party_role(role)
+    if role == BUYER_ROLE:
+        return BUYER_LIST_ROUTE
+    if role == OWNER_ROLE:
+        return OWNER_LIST_ROUTE
+    return None
 
 
 def normalize_party_role(value):
@@ -30,9 +60,9 @@ def resolve_party_role(canonical, aliases=(), *, owns_unit=False, has_interest=F
 
     if owns_unit:
         reason = "relationship_conflict" if has_interest else "unit_owner"
-        return "Seller", reason
+        return OWNER_ROLE, reason
     if has_interest:
-        return "Buyer", "lead_interest"
+        return BUYER_ROLE, "lead_interest"
     if len(alias_roles) == 1:
         alias_role = next(iter(alias_roles))
         if canonical_role and canonical_role != alias_role:
@@ -59,11 +89,8 @@ def normalize_lead_view_filters(filters):
     canonical_value = cleaned.get("party_type")
     if isinstance(canonical_value, list):
         canonical_value = canonical_value[-1] if canonical_value else None
-    role = (
-        canonical_value
-        if canonical_value in {"Buyer", "Seller"}
-        else None
-    )
+    # Accept the canonical value and old spellings such as Seller; store Owner.
+    role = normalize_party_role(canonical_value) if isinstance(canonical_value, str) else None
 
     for fieldname in LEGACY_ROLE_FILTER_FIELDS:
         legacy_value = cleaned.pop(fieldname, None)
@@ -105,7 +132,7 @@ def normalize_lead_view_columns(columns):
             continue
         item = dict(column)
         key = item.get("key")
-        if key in LEGACY_ROLE_FILTER_FIELDS:
+        if key in LEGACY_ROLE_FILTER_FIELDS or key == "party_type":
             key = "party_type"
             item.update(
                 {
@@ -113,8 +140,8 @@ def normalize_lead_view_columns(columns):
                     "label": "Party Role",
                     "type": "Select",
                     "options": [
-                        {"label": "Buyer", "value": "Buyer"},
-                        {"label": "Seller", "value": "Seller"},
+                        {"label": BUYER_ROLE, "value": BUYER_ROLE},
+                        {"label": OWNER_ROLE, "value": OWNER_ROLE},
                     ],
                 }
             )

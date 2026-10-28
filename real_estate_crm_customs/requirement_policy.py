@@ -7,6 +7,35 @@ class RequirementError(ValueError):
     pass
 
 
+DEAL_BUY = "Buy"
+DEAL_RENT = "Rent"
+DEAL_TYPES = (DEAL_BUY, DEAL_RENT)
+# Renting is a Resale (owner-listed) activity; Brokerage requests may also be rentals.
+RENT_CATEGORIES = ("Resale", "Brokerage Request")
+
+
+LISTING_FOR_SALE = "For Sale"
+LISTING_FOR_RENT = "For Rent"
+LISTING_FOR_SALE_OR_RENT = "For Sale or Rent"
+
+
+def listing_purposes_for_deal(deal):
+    """Unit Listing Purposes that a Buy or Rent requirement may match."""
+    if deal == DEAL_RENT:
+        return [LISTING_FOR_RENT, LISTING_FOR_SALE_OR_RENT]
+    return [LISTING_FOR_SALE, LISTING_FOR_SALE_OR_RENT]
+
+
+def deal_type(value, category=None):
+    """Return the canonical Deal Type; blank means Buy for historical requirements."""
+    resolved = str(value or "").strip() or DEAL_BUY
+    if resolved not in DEAL_TYPES:
+        raise RequirementError("Deal Type must be Buy or Rent.")
+    if resolved == DEAL_RENT and category and category not in RENT_CATEGORIES:
+        raise RequirementError("Rent is available only for Resale or Brokerage Request interests.")
+    return resolved
+
+
 def money(value, label="Budget", required=False):
     if value in (None, ""):
         if required:
@@ -42,7 +71,10 @@ def delivery_date(value):
     return parsed.isoformat()
 
 
-def inventory_categories(scope=None, category="Resale"):
+def inventory_categories(scope=None, category="Resale", deal=None):
+    if deal == DEAL_RENT:
+        # Only owner-listed Resale Units can be rented.
+        return ["Resale"]
     resolved = scope or (category if category in ("Resale", "Primary") else "Both")
     if resolved not in ("Resale", "Primary", "Both"):
         raise RequirementError("Inventory search scope must be Resale, Primary, or Both.")
@@ -56,13 +88,21 @@ def is_property_requirement(category, international_type=None):
 
 
 def requirement_snapshot(payload, currency=None, required_total=False):
-    categories = inventory_categories(payload.get("inventory_search_scope"), payload.get("interest_category"))
+    """Normalize requirement input. ``required_total`` means the deal's main budget is required:
+    the total budget for Buy, or the monthly rent for Rent."""
+    deal = deal_type(payload.get("deal_type"), payload.get("interest_category"))
+    renting = deal == DEAL_RENT
+    categories = inventory_categories(payload.get("inventory_search_scope"), payload.get("interest_category"), deal)
     snapshot = {
+        "deal_type": deal,
         "requested_destination": payload.get("preferred_destination") or None,
+        "requested_unit_category": payload.get("preferred_unit_category") or None,
         "requested_unit_type": payload.get("preferred_unit_type") or None,
-        "requested_budget": money(payload.get("buyer_budget"), "Maximum Total Budget", required_total),
-        "requested_down_payment_budget": money(payload.get("down_payment_budget"), "Down Payment Budget"),
-        "requested_monthly_installment_budget": money(payload.get("monthly_installment_budget"), "Monthly Installment Budget"),
+        # Purchase budgets do not apply to a rental; they are cleared rather than kept stale.
+        "requested_budget": None if renting else money(payload.get("buyer_budget"), "Maximum Total Budget", required_total),
+        "requested_down_payment_budget": None if renting else money(payload.get("down_payment_budget"), "Down Payment Budget"),
+        "requested_monthly_installment_budget": None if renting else money(payload.get("monthly_installment_budget"), "Monthly Installment Budget"),
+        "requested_rent_budget": money(payload.get("rent_budget"), "Maximum Monthly Rent", required_total) if renting else None,
         "requested_delivery_date": delivery_date(payload.get("preferred_delivery_date")),
         "requested_project": payload.get("preferred_compound") or None,
         "requested_developer": payload.get("preferred_developer") or None,
@@ -77,7 +117,12 @@ def requirement_snapshot(payload, currency=None, required_total=False):
     return snapshot
 
 
-BUDGET_AMOUNT_FIELDS = ("requested_budget", "requested_down_payment_budget", "requested_monthly_installment_budget")
+BUDGET_AMOUNT_FIELDS = (
+    "requested_budget",
+    "requested_down_payment_budget",
+    "requested_monthly_installment_budget",
+    "requested_rent_budget",
+)
 
 
 def requirement_amount(source, field):

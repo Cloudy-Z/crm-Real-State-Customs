@@ -137,7 +137,10 @@ def base_service_namespace(**overrides):
         "unit_mutation_context": lambda _operation: nullcontext(),
         "create_transition": Mock(),
         "mirror_interest_to_legacy": Mock(),
+        "DEAL_RENT": "Rent",
+        "UNIT_FINAL_STATUSES": ("Sold", "Rented"),
     }
+    extract(WORKFLOW, {"unit_final_status_for"}, namespace)
     namespace.update(overrides)
     return namespace
 

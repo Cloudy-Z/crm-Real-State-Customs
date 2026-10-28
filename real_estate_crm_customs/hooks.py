@@ -37,6 +37,7 @@ fixtures = [
                 [
                     "CRM Lead-real_estate_section",
                     "CRM Lead-party_type",
+                    "CRM Lead-owner_intent",
                     "CRM Lead-whatsapp_number",
                     "CRM Lead-selection_tier",
                     "CRM Lead-buyer_requirements_section",

@@ -10,8 +10,11 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import getdate, nowdate
 
+from real_estate_crm_customs.party_roles import is_buyer_role, is_owner_role
 from real_estate_crm_customs.requirement_policy import (
+    DEAL_RENT,
     RequirementError,
+    deal_type,
     delivery_date,
     is_property_requirement,
     money, requirement_amount,
@@ -73,18 +76,20 @@ class LeadInterest(Document):
         self._validate_server_managed_mutations()
         binding_changed = self.is_new() or any(
             self.has_value_changed(fieldname)
-            for fieldname in ("lead", "record_type", "category", "unit")
+            for fieldname in ("lead", "record_type", "category", "unit", "deal_type")
         )
         requirement_changed = self.is_new() or any(
             self.has_value_changed(fieldname)
             for fieldname in (
                 "record_type",
                 "category",
+                "deal_type",
                 "international_type",
                 "requested_destination",
                 "requested_area",
                 "requested_project",
                 "requested_developer",
+                "requested_unit_category",
                 "requested_unit_type",
                 "requested_budget",
                 "requested_budget_set",
@@ -92,6 +97,8 @@ class LeadInterest(Document):
                 "requested_down_payment_budget_set",
                 "requested_monthly_installment_budget",
                 "requested_monthly_installment_budget_set",
+                "requested_rent_budget",
+                "requested_rent_budget_set",
                 "requested_delivery_date",
                 "inventory_search_scope",
                 "budget_currency",
@@ -151,10 +158,20 @@ class LeadInterest(Document):
     def _validate_requirement_snapshot(self):
         migration = self.is_new() and creation_context_mode() == "migration"
         try:
+            self.deal_type = deal_type(self.get("deal_type"), self.category)
+        except RequirementError as exc:
+            frappe.throw(str(exc), frappe.ValidationError)
+        renting = self.deal_type == DEAL_RENT
+        try:
             self.requested_budget = money(
                 requirement_amount(self, "requested_budget"),
                 "Maximum Total Budget",
-                required=(not migration and self.category in {"Resale", "Primary"}),
+                required=(not migration and not renting and self.category in {"Resale", "Primary"}),
+            )
+            self.requested_rent_budget = money(
+                requirement_amount(self, "requested_rent_budget"),
+                "Maximum Monthly Rent",
+                required=(not migration and renting and self.category == "Resale"),
             )
             self.requested_down_payment_budget = money(
                 requirement_amount(self, "requested_down_payment_budget"), "Maximum Down Payment Budget"
@@ -166,6 +183,9 @@ class LeadInterest(Document):
         except RequirementError as exc:
             frappe.throw(str(exc), frappe.ValidationError)
 
+        if renting:
+            # Only owner-listed Resale Units can be rented, so a rental never searches Primary.
+            self.inventory_search_scope = "Resale"
         if not self.get("inventory_search_scope"):
             self.inventory_search_scope = self.category if self.category in {"Resale", "Primary"} else "Both"
         if self.inventory_search_scope not in {"Resale", "Primary", "Both"}:
@@ -187,7 +207,26 @@ class LeadInterest(Document):
         if not migration and self.category in {"Resale", "Primary"} and not self.get("requested_unit_type"):
             frappe.throw(_("A Resale or Primary Interest requires a Unit Type."), frappe.ValidationError)
         self.requirement_budget_presence_version = 1
+        self._sync_requested_unit_category()
         self._validate_requirement_relations()
+
+    def _sync_requested_unit_category(self):
+        """The Unit Type is authoritative; the Category only narrows the Unit Type choice."""
+        if not self.meta.has_field("requested_unit_category"):
+            return
+        unit_type = self.get("requested_unit_type")
+        if not unit_type:
+            return
+        category = frappe.db.get_value("Real Estate Unit Type", unit_type, "unit_category")
+        if not category:
+            return
+        selected = self.get("requested_unit_category")
+        if selected and selected != category and not (self.is_new() and creation_context_mode() == "migration"):
+            frappe.throw(
+                _("Unit Type {0} belongs to Unit Category {1}, not {2}.").format(unit_type, category, selected),
+                frappe.ValidationError,
+            )
+        self.requested_unit_category = category
 
     def _validate_requirement_relations(self):
         project = self.get("requested_project")
@@ -245,7 +284,7 @@ class LeadInterest(Document):
 
     def _validate_binding(self):
         party_type = frappe.db.get_value("CRM Lead", self.lead, "party_type")
-        if party_type != "Buyer":
+        if not is_buyer_role(party_type):
             frappe.throw(_("Lead Interests may only belong to Buyer leads."), frappe.ValidationError)
         valid_categories = {
             "Inventory Unit": {"Resale", "Primary"},
@@ -267,7 +306,7 @@ class LeadInterest(Document):
         if self.record_type != "Inventory Unit":
             return
         unit = frappe.db.get_value(
-            "Real Estate Unit", self.unit, ["inventory_type", "owner_lead"], as_dict=True
+            "Real Estate Unit", self.unit, ["inventory_type", "owner_lead", "listing_purpose"], as_dict=True
         )
         if not unit:
             frappe.throw(_("Real Estate Unit {0} was not found.").format(self.unit), frappe.DoesNotExistError)
@@ -283,10 +322,12 @@ class LeadInterest(Document):
                 if unit.owner_lead
                 else None
             )
-            if owner_role != "Seller":
-                frappe.throw(_("Resale Interests require a Unit owned by a Seller lead."))
+            if not is_owner_role(owner_role):
+                frappe.throw(_("Resale Interests require a Unit owned by an Owner lead."))
         if self.category == "Primary" and unit.owner_lead:
-            frappe.throw(_("Primary Interests cannot use a Seller-owned Unit."))
+            frappe.throw(_("Primary Interests cannot use an Owner-owned Unit."))
+        if self.is_new() or self.has_value_changed("unit") or self.has_value_changed("deal_type"):
+            _validate_unit_listing_for_deal(self.get("deal_type"), unit.get("listing_purpose"), self.unit)
 
     def on_trash(self):
         if not getattr(self.flags, "approved_interest_deletion", False):
@@ -294,6 +335,20 @@ class LeadInterest(Document):
                 _("Lead Interests cannot be deleted directly. Use the manager approval workflow."),
                 frappe.PermissionError,
             )
+
+
+def _validate_unit_listing_for_deal(deal, listing_purpose, unit_name):
+    listing = listing_purpose or "For Sale"
+    if deal == DEAL_RENT and listing not in ("For Rent", "For Sale or Rent"):
+        frappe.throw(
+            _("Unit {0} is not listed for rent, so it cannot be linked to a Rent Interest.").format(unit_name),
+            frappe.ValidationError,
+        )
+    if deal != DEAL_RENT and listing not in ("For Sale", "For Sale or Rent"):
+        frappe.throw(
+            _("Unit {0} is listed for rent only, so it cannot be linked to a Buy Interest.").format(unit_name),
+            frappe.ValidationError,
+        )
 
 
 def _site_currency():

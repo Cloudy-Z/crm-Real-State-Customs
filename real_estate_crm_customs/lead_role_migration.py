@@ -11,6 +11,10 @@ import json
 import frappe
 
 from real_estate_crm_customs.party_roles import (
+    BUYER_ROLE,
+    CANONICAL_PARTY_ROLES,
+    LEGACY_OWNER_LIST_ROUTE,
+    list_route_for_role,
     normalize_lead_view_columns,
     normalize_party_role,
     normalize_lead_view_filters,
@@ -22,7 +26,7 @@ from real_estate_crm_customs.party_roles import (
 
 
 LEGACY_ROLE_FIELDS = ("custom_type", "lead_type")
-CANONICAL_ROLES = {"Buyer", "Seller"}
+CANONICAL_ROLES = set(CANONICAL_PARTY_ROLES)
 
 
 def _log_issue(lead_name, message):
@@ -98,8 +102,10 @@ def _migrate_lead_view_routes():
             normalized_value = normalizer(raw_value)
             if parsed_value != normalized_value:
                 values[fieldname] = json.dumps(normalized_value, ensure_ascii=False)
-        if role and view.route_name == "Leads":
-            values["route_name"] = "Buyers" if role == "Buyer" else "Sellers"
+        if role and view.route_name in ("Leads", LEGACY_OWNER_LIST_ROUTE):
+            values["route_name"] = list_route_for_role(role)
+        elif view.route_name == LEGACY_OWNER_LIST_ROUTE:
+            values["route_name"] = list_route_for_role("Owner")
         if not values:
             continue
         frappe.db.set_value(
@@ -194,7 +200,7 @@ def reconcile_party_roles():
                 f"Party Role evidence conflict: canonical={canonical!r}, aliases={sorted(aliases)!r}, owns_unit={lead.name in unit_owners}, has_interest={lead.name in interest_leads}",
             )
         if role not in CANONICAL_ROLES:
-            role = "Buyer"
+            role = BUYER_ROLE
             summary["defaulted"] += 1
         if reason in {
             "unit_owner",
