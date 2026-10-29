@@ -1,7 +1,7 @@
 # Real Estate CRM: Technical Guide
 
 **Audience:** developers, implementers, administrators, and anyone who needs to understand how the system works.
-**Snapshot:** 29 October 2026. Owner Lead / Unit listing workflow release (commit hashes are recorded in Change history after release).
+**Snapshot:** 29 October 2026. Custom app `main` at `669ddfb`; CRM fork `develop` at `6474cf88`. This is the Owner Lead / Unit listing workflow release.
 **Companion files:** [`AGENTS.md`](../AGENTS.md) is the condensed rulebook for AI coding agents. The editable diagrams in [`diagrams/`](diagrams/) are the sources for every diagram in this guide.
 
 ---
@@ -740,9 +740,9 @@ How to diagnose an unknown error: identify the lifecycle phase that fails (patch
 | 2026-10-27 | `fdd235f`, `85308aa` | Developer JSON repair, Founded In as an optional date, only Developer Name required |
 | 2026-10-28 | `bd83408` | Compound Phases, Unit Categories, import-ready Compound masters |
 | 2026-10-28 | `fcc458c` | Seller renamed to Owner; Sale/Rent model; Unit Category in Smart Match |
-| 2026-10-29 | pending release commit | Independent Owner Lead/Unit lifecycle, private listing evidence gate, quarterly verification, Buyer counters and portal view logging |
+| 2026-10-29 | `669ddfb` | Independent Owner Lead/Unit lifecycle, private listing evidence gate, quarterly verification, Buyer counters and portal view logging |
 
-Frontend highlights: `b925868c` (Link dropdown buttons no longer submit the action form) and `1810fd3c` (Owner role, Unit Category Smart Match filter, Buy/Rent requirements in the portal).
+Frontend highlights: `b925868c` (Link dropdown buttons no longer submit the action form), `1810fd3c` (Owner role, Unit Category Smart Match filter, Buy/Rent requirements), and `6474cf88` (Owner panel, full intake, private evidence uploads and Unit insights).
 
 ## 24. Implementation status
 
