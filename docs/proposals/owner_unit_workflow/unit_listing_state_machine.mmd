@@ -1,44 +1,38 @@
 ---
-title: PROPOSED v2 - Seller Unit row states (listing_status) - mirror of the buyer Interest row
+title: Owner Unit listing_status state machine — implemented 29 Oct 2026
 ---
 stateDiagram-v2
     direction TB
 
-    state "Pricing Requested<br/>(like buyer: Requested)" as PR
-    state "Price Proposed<br/>(like buyer: Offer Sent)" as PP
-    state "Listed<br/>(matchable - Unit status Available)" as LI
-    state "Verification Due<br/>(3-month check open)" as VD
-    state "Off Market<br/>(temporarily unavailable)" as OM
-    state "Under Contract<br/>(buyer Interest in Closing - Unit Reserved)" as UC
-    state "Sold<br/>(contract signed - Unit Sold)" as SO
-    state "Withdrawn<br/>(declined / sold elsewhere / stopped)" as WD
+    state "Pricing Requested" as PR
+    state "Price Proposed" as PP
+    state "Documents Pending" as DP
+    state "Listed (Buyer-matchable)" as LI
+    state "Verification Due" as VD
+    state "Off Market" as OM
+    state "Withdrawn" as WD
+    state "Available / Reserved / Sold / Rented\n(separate availability state)" as AV
 
-    [*] --> LI: Add Property - owner sets price
-    [*] --> PR: Add Property - owner asks agent to price
+    [*] --> DP: Owner Price at full intake
+    [*] --> PR: Agent Pricing at full intake
 
-    PR --> PP: Agent Pricing submitted
-    PP --> LI: Price Decision - accept or own price
-    PP --> PR: Price Decision - re-price
-    PP --> WD: Price Decision - declines
+    PR --> PP: Agent proposal with basis and price
+    PP --> DP: Owner accepts proposal or sets price
+    PP --> PR: Owner requests re-price
+    PP --> WD: Owner declines
 
-    LI --> VD: 3-month verification action becomes due
-    LI --> PR: Update - owner asks re-pricing
-    LI --> OM: Update - temporarily unavailable
-    LI --> WD: Update - withdrawn / sold elsewhere
+    DP --> LI: Private evidence + agreement + price gate passes
+    DP --> DP: Documents updated; gate still incomplete
+    LI --> VD: next_verification_due reached
+    VD --> LI: Still Available; renew +3 months
+    VD --> OM: Temporarily Unavailable; future date required
+    VD --> PR: Re-price
+    VD --> WD: Withdrawn / Sold Elsewhere
+    OM --> LI: Owner confirms availability
+    OM --> WD: Owner withdraws
 
-    VD --> LI: Verified available (same or new owner price)
-    VD --> PR: Available - needs re-pricing
-    VD --> OM: Temporarily unavailable
-    VD --> WD: Withdrawn / sold elsewhere
-
-    OM --> LI: Follow-up call - available again
-    OM --> WD: Follow-up call - withdrawn
-
-    LI --> UC: Buyer Begin Closing (existing)
-    VD --> UC: Buyer Begin Closing (existing)
-    UC --> LI: Closing abandoned (existing release)
-    UC --> SO: Contract signed - Closed Won (existing)
-
-    WD --> PR: Sales Manager reactivation only
-    WD --> LI: Sales Manager reactivation - owner sets price
-    SO --> [*]
+    LI --> AV: Buyer begins Closing (Available -> Reserved)
+    VD --> AV: Existing closing remains authoritative
+    AV --> LI: Buyer closing abandoned; availability returns Available
+    WD --> DP: Manager reactivation when price present
+    WD --> PR: Manager reactivation when price absent

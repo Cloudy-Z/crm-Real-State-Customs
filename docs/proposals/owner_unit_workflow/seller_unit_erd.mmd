@@ -1,50 +1,52 @@
 ---
-title: PROPOSED v2 - Data model (NEW = additive; buyer engine reused)
+title: Owner Lead / Unit listing workflow data model — implemented
 ---
 erDiagram
-    SELLER_LEAD ||--o{ REAL_ESTATE_UNIT : "owns via owner_lead (seller rows)"
-    BUYER_LEAD ||--o{ LEAD_INTEREST : "buyer rows"
-    REAL_ESTATE_UNIT ||--o{ LEAD_INTEREST : "interested buyers - counted"
-    SELLER_LEAD ||--o{ LEAD_ACTION_EXECUTION : "seller calls and actions"
-    BUYER_LEAD ||--o{ LEAD_ACTION_EXECUTION : "buyer calls and actions"
-    REAL_ESTATE_UNIT ||--o{ LEAD_ACTION_EXECUTION : "unit-scoped row actions"
-    LEAD_ACTION_EXECUTION }o--o| SELLER_LEAD : "seller_lead on buyer Owner Meeting / Showing"
-    LEAD_ACTION_EXECUTION ||--o| EVENT : "calendar"
-    REAL_ESTATE_UNIT ||--o{ VERSION : "Track Changes - DONE"
-    REAL_ESTATE_UNIT ||--o{ VIEW_LOG : "Track Views - DONE"
+    CRM_LEAD ||--o{ REAL_ESTATE_UNIT : "owns via owner_lead (Owner only)"
+    CRM_LEAD ||--o{ LEAD_INTEREST : "Buyer only"
+    REAL_ESTATE_UNIT ||--o{ LEAD_INTEREST : "linked Buyer interests"
+    CRM_LEAD ||--o{ LEAD_ACTION_EXECUTION : "Owner lead actions"
+    REAL_ESTATE_UNIT ||--o{ LEAD_ACTION_EXECUTION : "Owner Unit-scoped actions"
+    REAL_ESTATE_UNIT ||--o{ REAL_ESTATE_UNIT_DOCUMENT : "private evidence"
+    REAL_ESTATE_UNIT ||--o{ UNIT_SCHEDULED_SHOWING : "Buyer showing projection"
+    REAL_ESTATE_UNIT ||--o{ VIEW_LOG : "unique portal / Desk views"
+    LEAD_ACTION_EXECUTION }o--o| EVENT : "calendar projection"
 
-    SELLER_LEAD {
-        select party_type "Seller"
-        link status "rollup: New, Fresh Lead, Pricing, Listed, Negotiating, Closing, Closed Won"
-        select interest_status "SHOWN FOR SELLER: Interested / Not Interested to sell"
-        int no_answer_consecutive_count "SHOWN FOR SELLER"
-        int no_answer_total_count "SHOWN FOR SELLER"
-        select last_call_outcome "SHOWN FOR SELLER"
+    CRM_LEAD {
+        select party_type "Buyer or Owner"
+        link status "read-only Buyer/Owner rollup"
+        select interest_status "Owner qualification"
+        int no_answer_consecutive_count
+        int no_answer_total_count
+        select last_call_outcome
     }
     REAL_ESTATE_UNIT {
-        select status "existing Available / Reserved / Sold"
-        select listing_status "NEW read-only: 8 row states"
-        select listing_reason "NEW Off Market or Withdrawn reason"
-        select pricing_method "NEW Owner Price / Agent Pricing"
-        currency over_price "existing - the asking price input"
-        currency proposed_over_price "NEW agent proposal"
-        text pricing_basis "NEW comparables / reasoning"
-        attach pricing_file "NEW private, optional"
-        date last_verified_on "NEW"
-        date next_verification_due "NEW"
-        check verification_overdue "NEW"
-        int active_buyer_interest_count "NEW"
-        int total_buyer_interest_count "NEW"
+        link owner_lead "Owner only"
+        select status "Available/Reserved/Sold/Rented"
+        select listing_status "Pricing/Documents/Listed/etc."
+        select pricing_method "Owner Price / Agent Pricing"
+        currency proposed_over_price
+        text pricing_basis
+        date last_verified_on
+        date next_verification_due
+        int active_buyer_interest_count
+        int total_buyer_interest_count
+        attach listing_agreement_file "private"
+    }
+    REAL_ESTATE_UNIT_DOCUMENT {
+        select document_type "Ownership proof / Owner ID / legal"
+        select document_status "Received / Verified"
+        attach file "private"
     }
     LEAD_ACTION_EXECUTION {
-        select action_type "ADD options: Add Property, Agent Pricing, Price Decision"
-        select purpose "ADD options: Pricing Follow-up, Availability Verification"
-        select scope_type "ADD option: Unit"
-        link unit "existing"
-        link seller_lead "existing"
-        select contact_result "existing - shared no-answer logic"
+        select scope_type "Lead / Interest / Batch / Unit"
+        select action_type "Call / Add Property / Agent Pricing / Price Decision / Listing Documents"
+        select purpose "Listing Intake / Price Proposal / Documents Collection / Availability Verification"
+        link unit
+        link seller_lead "technical legacy name; UI Owner Lead"
     }
     LEAD_INTEREST {
-        link unit "existing"
-        check is_active "existing - feeds the counter"
+        link unit
+        check is_active
+        select workflow_status
     }

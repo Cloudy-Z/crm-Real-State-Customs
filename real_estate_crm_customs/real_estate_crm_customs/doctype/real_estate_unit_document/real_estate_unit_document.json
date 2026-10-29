@@ -1,0 +1,62 @@
+{
+  "actions": [],
+  "creation": "2026-10-29 19:30:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "document_type",
+    "document_status",
+    "file",
+    "received_on",
+    "notes"
+  ],
+  "fields": [
+    {
+      "fieldname": "document_type",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Document Type",
+      "reqd": 1,
+      "options": "Ownership Contract\nTitle Deed / Registration\nOwner National ID / Passport\nPower of Attorney\nDeveloper Payment Receipts\nUtility and Maintenance Clearance\nFloor Plan\nOther"
+    },
+    {
+      "fieldname": "document_status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Status",
+      "reqd": 1,
+      "options": "Received\nVerified\nRejected",
+      "default": "Received"
+    },
+    {
+      "fieldname": "file",
+      "fieldtype": "Attach",
+      "in_list_view": 1,
+      "label": "File",
+      "description": "Optional private copy. Upload as a private file."
+    },
+    {
+      "fieldname": "received_on",
+      "fieldtype": "Date",
+      "in_list_view": 1,
+      "label": "Received On"
+    },
+    {
+      "fieldname": "notes",
+      "fieldtype": "Small Text",
+      "label": "Notes"
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-10-29 19:30:00.000000",
+  "modified_by": "Administrator",
+  "module": "Real Estate CRM Customs",
+  "name": "Real Estate Unit Document",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "idx",
+  "sort_order": "ASC",
+  "states": []
+}

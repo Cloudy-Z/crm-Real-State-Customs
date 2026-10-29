@@ -1,35 +1,31 @@
 ---
-title: PROPOSED v2 - One Lead Status list for both cycles (system-managed, read-only)
+title: System-managed Lead statuses — Buyer Interest and Owner Unit rollups
 ---
 flowchart LR
-    subgraph SHARED["Shared by Buyer and Seller"]
-        N["New"]
-        F["Fresh Lead"]
-        NG["Negotiating"]
-        CL["Closing"]
-        CW["Closed Won"]
+    subgraph SHARED["Shared (read-only system rollup)"]
+        N[New]
+        F[Fresh Lead]
+        NG[Negotiating]
+        CL[Closing]
+        CW[Closed Won]
     end
-    subgraph BUY["Buyer only (existing)"]
-        RQ["Requested"]
-        OS["Offer Sent"]
+    subgraph BUY["Buyer Interest-derived"]
+        RQ[Requested]
+        OS[Offer Sent]
     end
-    subgraph SELL["Seller only (new)"]
-        PRC["Pricing"]
-        LST["Listed"]
-    end
-    subgraph DEL["REMOVE - not used by either cycle"]
-        X1["Contacted"]
-        X2["Nurture"]
-        X3["Qualified"]
-        X4["Converted"]
-        X5["Unqualified"]
-        X6["Junk"]
-        X7["Offer Selected (legacy)"]
+    subgraph OWN["Owner Unit-derived"]
+        PR[Pricing]
+        DP[Documents Pending]
+        LI[Listed]
     end
 
-    N --> RQ --> OS --> NG
+    N --> RQ --> OS --> NG --> CL --> CW
     F --> RQ
-    N -. seller .-> PRC --> LST --> NG
-    F -. seller .-> PRC
-    N -. seller, owner prices .-> LST
-    NG --> CL --> CW
+    N --> PR --> DP --> LI --> NG
+    F --> PR
+    N --> DP
+    N --> LI
+    F --> LI
+
+    note1["Buyer: _rollup_target from active Interests\nOwner: reconcile_owner_lead_rollup from owned Units\nNo agent directly edits Lead Status."]
+    LI -.-> note1

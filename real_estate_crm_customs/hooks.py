@@ -18,6 +18,7 @@ scheduler_events = {
     },
     "daily": [
         "real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit.refresh_delivery_statuses",
+        "real_estate_crm_customs.owner_workflow.run_daily_listing_verification",
     ],
 }
 

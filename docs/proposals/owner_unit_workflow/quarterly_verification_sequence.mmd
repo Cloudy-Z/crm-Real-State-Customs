@@ -1,37 +1,38 @@
 ---
-title: PROPOSED v2 - 3-month update and availability verification (planned next action, same as buyer)
+title: Quarterly Owner availability verification — implemented sequence
 ---
 sequenceDiagram
     autonumber
-    participant G as Agent
-    participant D as Action popup (same as buyer)
-    participant U as Unit row
-    participant A as Availability Verification action
+    participant A as Agent
+    participant W as Owner workflow
+    participant U as Unit
+    participant E as Event / Unit action
     participant S as Daily scheduler
     participant M as Sales Manager
 
-    G->>D: Price Decision accepted / owner sets price
-    D->>U: listing_status = Listed, last_verified_on = today
-    D->>A: Auto next action: Call - Availability Verification<br/>planned at today + 3 months (Event + ToDo)
-    Note over U,A: One open verification per Unit (row lock) - never duplicated
+    A->>W: Mark Listing Documents action Listed
+    W->>U: listed_on and last_verified_on = today
+    W->>U: next_verification_due = today + 3 months
+    W->>E: Create one planned Availability Verification call + Event
 
-    S->>A: Daily: planned date reached
-    S->>U: listing_status = Verification Due (Unit still matchable)
+    S->>U: On/after due date, lock Unit
+    S->>U: Listed -> Verification Due
+    S->>E: Reconcile exactly one open verification action/Event
+    Note over S,E: Repeated scheduler runs do not create duplicates
 
-    G->>D: Start the verification call, record result, final submit
-    alt Available - same price or owner sets new price
-        D->>U: Listed, last_verified_on = today
-        D->>A: Next verification auto-planned at +3 months
-    else Needs re-pricing
-        D->>U: Pricing Requested, next action Agent Pricing required
-    else Temporarily unavailable
-        D->>U: Off Market (hidden from matching), follow-up call required
-    else Sold elsewhere / withdrawn
-        D->>U: Withdrawn (hidden), open buyer Interests flagged for their agents
-    else No answer
-        D->>A: No-answer counters updated, retry call required
+    A->>W: Record Owner verification outcome
+    alt Still Available
+        W->>U: Listed, optional price update, renew plus 3 months
+        W->>E: Create next verification action/Event
+    else Temporarily Unavailable
+        W->>U: Off Market, require a future verification date
+        W->>E: Plan follow-up verification
+    else Re-price
+        W->>U: Pricing Requested
+        W->>E: Plan Agent Pricing
+    else Withdrawn / Sold Elsewhere
+        W->>U: Withdrawn
     end
 
-    S->>U: 7 days past due with no result: verification_overdue = 1
-    S->>M: Overdue alert
-    S->>U: 14 days past due: hidden from NEW Smart Match results
+    S->>M: More than 7 days overdue: one manager-attention comment
+    Note over U,S: More than 14 days overdue: excluded from new Buyer matches.\nScheduler never changes availability without an agent outcome.

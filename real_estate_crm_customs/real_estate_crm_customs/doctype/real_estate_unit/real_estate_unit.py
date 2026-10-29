@@ -44,6 +44,30 @@ def is_listed_for_rent(listing_purpose):
 AREA_FIELDS = ("bua", "land_area", "garden_area", "roof_area", "terrace_area")
 COUNT_FIELDS = ("bedrooms", "bathrooms", "number_of_floors")
 FINANCIAL_INPUT_FIELDS = ("paid", "over_price", "remaining", "over_is_gross")
+OWNER_PRE_PRICE_LISTING_STATUSES = {"Pricing Requested", "Price Proposed"}
+OWNER_WORKFLOW_CONTROLLED_FIELDS = {
+    "pricing_method",
+    "listing_status",
+    "listing_status_reason",
+    "proposed_over_price",
+    "proposed_monthly_rent",
+    "proposed_daily_rent",
+    "pricing_basis",
+    "price_proposed_on",
+    "listed_on",
+    "last_verified_on",
+    "next_verification_due",
+    "verification_alert_sent_on",
+    "owner_documents",
+    "listing_agreement_type",
+    "listing_agreement_reference",
+    "listing_agreement_signed_on",
+    "listing_agreement_expires_on",
+    "listing_commission_percent",
+    "listing_agreement_file",
+    "active_buyer_interest_count",
+    "total_buyer_interest_count",
+}
 
 
 class RealEstateUnit(Document):
@@ -70,6 +94,7 @@ class RealEstateUnit(Document):
 
     def validate(self):
         validate_closing_state_mutation(self)
+        validate_owner_listing_mutation(self)
         validate_unit(self)
 
 
@@ -209,6 +234,24 @@ def validate_closing_state_mutation(doc):
         )
 
 
+def validate_owner_listing_mutation(doc):
+    """Owner listing state is changed only by the Owner workflow service.
+
+    DocType read-only properties protect the portal, but Data Import and direct
+    API saves are server requests.  This guard keeps those paths from marking
+    an incomplete Unit as Listed or overwriting evidence/audit projections.
+    """
+    if doc.is_new() or unit_mutation_active():
+        return
+    changed = {fieldname for fieldname in OWNER_WORKFLOW_CONTROLLED_FIELDS if doc.has_value_changed(fieldname)}
+    if changed:
+        labels = ", ".join(doc.meta.get_label(fieldname) for fieldname in sorted(changed))
+        frappe.throw(
+            _("Owner listing workflow fields can only be changed through the guided Owner workflow: {0}.").format(labels),
+            frappe.PermissionError,
+        )
+
+
 def _changed(doc, *fieldnames):
     return any(doc.has_value_changed(fieldname) for fieldname in fieldnames)
 
@@ -320,7 +363,13 @@ def validate_listing_purpose(doc):
             _("Only Resale units owned by an Owner lead can be listed for rent."),
             frappe.ValidationError,
         )
-    if is_listed_for_sale(purpose) and float(doc.get("total_price_net") or 0) <= 0 and float(doc.get("price") or 0) <= 0:
+    awaiting_agent_price = doc.get("listing_status") in OWNER_PRE_PRICE_LISTING_STATUSES
+    if (
+        is_listed_for_sale(purpose)
+        and not awaiting_agent_price
+        and float(doc.get("total_price_net") or 0) <= 0
+        and float(doc.get("price") or 0) <= 0
+    ):
         frappe.throw(
             _("A Unit listed for sale needs a sale price. Enter Paid, Over Price, and Remaining."),
             frappe.ValidationError,
@@ -333,7 +382,8 @@ def validate_rental_rates(doc):
     if monthly < 0 or daily < 0:
         frappe.throw(_("Rent amounts cannot be negative."), frappe.ValidationError)
     purpose = doc.get("listing_purpose") or LISTING_FOR_SALE
-    if is_listed_for_rent(purpose) and monthly <= 0 and daily <= 0:
+    awaiting_agent_price = doc.get("listing_status") in OWNER_PRE_PRICE_LISTING_STATUSES
+    if is_listed_for_rent(purpose) and not awaiting_agent_price and monthly <= 0 and daily <= 0:
         frappe.throw(
             _("A Unit listed for rent needs a monthly rent or a daily rent."),
             frappe.ValidationError,

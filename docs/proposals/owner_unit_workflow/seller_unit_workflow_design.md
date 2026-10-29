@@ -1,143 +1,106 @@
-# Seller and Unit Workflow — Design v2 for Approval
+# Owner Lead and Unit Listing Workflow — Implementation Record
 
-> **Status: proposal awaiting approval (not implemented).** Written before the 28 Oct 2026 rename of the **Seller** role to **Owner**, so it still says "Seller". Read "Seller" as "Owner Lead". Approve or change the decisions in section 5 before any code is written.
+> **Status: implemented on 29 October 2026.** This document preserves the approved editable design and records the production contract. “Seller” in older history means **Owner**; the only stored role authority is `CRM Lead.party_type = Owner`.
 
-**Status:** This is a proposal only, and no workflow code has been written. The DocType settings from the first part of your request are already done and pushed as backend `a5072b2`. Those settings are import on all six masters, Track Changes on Unit and Compound, and Track Views on Unit.
+## Purpose and boundary
 
-**What changed from v1:** The Seller no longer has a separate design. It runs on the **same guided-action engine as the Buyer**. That means the same popup, the same flags, the same "Call or WhatsApp first" rule, the same atomic final submit, and the same required next action. The Seller's **Units play the role that Interest rows play for the Buyer**. Each Unit has its own row status, actions and lock, and the Lead Status is a read-only summary of those rows. The status list is also cleaned so that only statuses one of the two cycles actually reaches remain.
+The Owner workflow guides an agent from first contact to a safely matchable resale listing. It is deliberately separate from the Buyer workflow:
 
-The editable diagrams are the [side-by-side Buyer/Seller cycle](seller_lead_workflow.mmd), the [Unit row states](unit_listing_state_machine.mmd), the [shared Lead status map](lead_status_map.mmd), the [3-month verification sequence](quarterly_verification_sequence.mmd), and the [data model](seller_unit_erd.mmd).
+- **Buyer authority:** one standalone `Lead Interest` per requirement or offered Unit. Buyer status is derived from Interest states.
+- **Owner authority:** one Unit listing lifecycle per owned Unit. Owner status is derived from owned Unit listing/commercial facts.
+- **Shared evidence:** both write `Lead Action Execution`, Events, comments and CRM activity. Owner Unit actions use `scope_type = Unit`; they never receive a Buyer Interest scope.
+- **Ownership rule:** only an Owner Lead may be `Real Estate Unit.owner_lead`. A Buyer links to a Unit only through `Lead Interest`.
 
-## 1. Buyer → Seller mirror
+This separation prevents an Owner pricing/document action from changing a Buyer Interest, and prevents a Buyer offer from bypassing an Owner’s listing evidence/availability control.
 
-| Buyer cycle (existing, unchanged) | Seller cycle (proposed, same engine) |
+## Editable diagrams
+
+- [Owner Lead action cycle](seller_lead_workflow.mmd)
+- [Unit listing state machine](unit_listing_state_machine.mmd)
+- [Buyer/Owner Lead status map](lead_status_map.mmd)
+- [Quarterly verification sequence](quarterly_verification_sequence.mmd)
+- [Owner/Unit data model](seller_unit_erd.mmd)
+
+## Owner Lead guided cycle
+
+1. A manually/imported Owner Lead begins **New**; an API/campaign Owner Lead begins **Fresh Lead**.
+2. The first guided action is **Call — Initial Qualification**. An answered call must be marked **Interested** or **Not Interested**. No Answer increments both counters; Answered resets only the current streak.
+3. An Interested Owner can use **Add Property**, a General Follow-up Call, or an Explore Meeting. The Owner workflow panel is separate from the Buyer Interest Workboard.
+4. **Add Property** opens the full Unit tab/section layout, with the Owner prefilled and protected. It creates a Resale Unit, a completed intake audit action and exactly one successor action.
+5. The Owner chooses one pricing path:
+   - **Owner Price:** the Unit proceeds to **Documents Pending**.
+   - **Agent Pricing:** the Unit proceeds to **Pricing Requested**. The agent records the comparable/recommendation basis and at least one proposal; then the Owner accepts, sets another price, requests re-pricing, or declines.
+6. The **Listing Documents** action captures/updates ownership evidence, Owner ID/passport evidence and the listing agreement. Files must be private. Marking Listed runs the server gate.
+7. A Listed Unit has a planned **Availability Verification** call three months later. The daily scheduler makes it Due and reconciles one Event/action; it does not automatically claim that the Unit is available.
+
+## Listing state and allowed operations
+
+| Listing state | Unit actions | Result |
+|---|---|---|
+| Pricing Requested | Agent Pricing, Pricing Follow-up Call | Price Proposed or remains pending |
+| Price Proposed | Price Decision, Pricing Follow-up Call | Documents Pending, Pricing Requested, Withdrawn |
+| Documents Pending | Listing Documents, General Follow-up Call | Listed when all evidence passes; otherwise remains pending |
+| Listed | Availability Verification | Verification Due on the planned date; still owner-controlled |
+| Verification Due | Availability Verification | Listed, Off Market, Pricing Requested or Withdrawn |
+| Off Market | Availability Verification | Listed after explicit availability confirmation, or Withdrawn |
+| Withdrawn | Manager reactivation only | Documents Pending or Pricing Requested, then a successor action |
+
+`Reserved`, `Sold` and `Rented` are **availability** states driven only by the Buyer signed-contract/lease process. A reserved, sold or rented Unit cannot be reactivated as an Owner listing. Returning a Rented Unit to market requires a new Owner confirmation before matching resumes.
+
+## Evidence and pricing gate
+
+The system allows a pre-price Agent Pricing intake but will not list a Unit until all relevant conditions are true:
+
+1. the applicable sale price and/or monthly/daily rent exists for `Listing Purpose`;
+2. a **privately uploaded** Owner document row is Received or Verified for **Ownership Contract** or **Title Deed / Registration**;
+3. a **privately uploaded** Owner document row is Received or Verified for **Owner National ID / Passport**;
+4. a Listing Agreement type, signed date and **privately uploaded** signed agreement are recorded; and
+5. uploaded Owner evidence and agreement files are private.
+
+The agent proposes a price; the Owner makes the final price decision. The confirmed financial inputs continue to use the canonical Unit calculation: Total Net = Paid + Over Net + Remaining, with the defined taxes and commission calculation. A proposal does not alter the live asking price until the Owner accepts/sets it.
+
+## Buyer visibility, meetings and insights
+
+- An Owner-owned Unit is included in new Buyer Smart Match/manual selection/direct Interest binding only when it is Available and `Listed`, or in the limited **14-day Verification Due grace**. The final `LeadInterest.validate` check prevents any UI/API bypass.
+- Primary Units and historical Units without a listing lifecycle remain compatible with existing inventory behavior.
+- Buyer **Owner Meetings** and **Showings** are projected to the Unit and Owner Lead. Buyer Closing, signed contract and abandoned closing refresh the Owner Lead rollup.
+- `active_buyer_interest_count` is the number of distinct Buyers with active Interests on the Unit. `total_buyer_interest_count` is the distinct Buyer count across all linked Interests. Interest hooks and the migration reconcile them.
+- Unit Track Changes and Track Views are enabled. The portal records one unique user view through `log_unit_view()` and displays views, active Buyers and all linked Buyers on the Unit form.
+
+## Owner Lead status rollup
+
+`reconcile_owner_lead_rollup()` selects the first applicable value:
+
+1. **Closed Won** — an owned Unit is Sold/Rented by a signed CRM Interest.
+2. **Closing** — an owned Unit is Reserved.
+3. **Negotiating** — an active Buyer Interest on an owned Unit is in an accepted/negotiating/showing state.
+4. **Listed** — an owned Unit is Listed, Verification Due or Off Market.
+5. **Documents Pending** — an owned Unit requires listing documents/agreement.
+6. **Pricing** — an owned Unit is Pricing Requested or Price Proposed.
+7. **New** or **Fresh Lead** — the Owner’s stored origin when none of the above applies.
+
+The Lead Status remains read-only. Buyer statuses (Requested and Offer Sent) remain Buyer-only because they come from Buyer Interests.
+
+## Scheduler and overdue safety
+
+`run_daily_listing_verification()` is configured as a daily scheduler job. For each eligible owned Unit it locks the Unit, transitions Listed to Verification Due on/after `next_verification_due`, ensures only one open Unit action/Event, and adds one manager-attention comment after seven overdue days. At more than fourteen overdue days it is excluded from new matching. Scheduler errors are isolated with savepoints and logged; a bad Unit never stops the scan.
+
+## Implementation map
+
+| Area | Main file(s) |
 |---|---|
-| New / Fresh Lead: only **Call** or **WhatsApp** allowed | Same |
-| Call result: Answered / No Answer / Wrong Number / Invalid; no-answer streak resets on answer, total history kept | Same fields and logic. These flags become visible for Sellers too. |
-| Answered → **Interested / Not Interested** flag (read-only, system-set) | Same flag, meaning *interested to sell/list* |
-| Interested → same popup shows the **Interest requirements** + Smart Match | Interested → same popup shows **Add Property** (unit details) + **who prices: owner or agent** |
-| Interest rows: Requested, Matched, Offer Sent … | Unit rows: Pricing Requested, Price Proposed, Listed … |
-| **Send Offer** (WhatsApp) → **Offer Decision** | **Agent Pricing** (proposal sent by WhatsApp) → **Price Decision** by the owner |
-| Owner / Developer / Explore Meeting | Buyer Owner Meetings and Showings on his Units appear automatically on the Seller Lead and the Unit. Explore Meeting can be reused as an on-site unit visit. |
-| Closing needs contract reference + signed date → Closed Won | Same closing, driven from the buyer's Interest on his Unit; the Seller Lead and Unit follow automatically |
-| Every action needs a next action at final submit; notes optional | Same. A Unit becoming Listed auto-plans the **3-month Availability Verification** as its next action. |
-| Not Interested → only a manager can requalify | Same |
-| Interest Workboard with row actions | Seller **Unit Workboard** with the same layout and row actions |
+| Owner workflow API/service | `real_estate_crm_customs/owner_workflow.py` |
+| Owner listing fields / documents | `doctype/real_estate_unit/`, `doctype/real_estate_unit_document/` |
+| Buyer counter and final listing backstop | `doctype/lead_interest/lead_interest.py`, `api.py` |
+| Owner lead status and layouts | `install.py`, `fixtures/custom_field.json`, `hooks.py` |
+| Migration | `patches/v16_0/owner_unit_listing_workflow.py` |
+| Owner panel and full Add Property intake | CRM fork `frontend/src/components/OwnerListingWorkflow.vue`, `pages/Lead.vue` |
+| Unit insights / view logging | CRM fork `frontend/src/pages/RealEstateForm.vue` |
+| Regression tests | `tests/test_owner_listing_workflow.py` plus existing closing/action/schema tests |
 
-Pricing follows standard practice: the agent recommends a price from comparable sales and condition, but the owner has the final say [2] [3]. For resale, Paid and Remaining are contract facts, so the agent's proposal targets the **Over Price**, and the existing financial formula recalculates every total. The 3-month check applies the same time-bound "available and up to date" idea that portals such as Bayut TruCheck use [4]. The Unit row states map onto the RESO listing-status standard [1].
+## References behind the approved design
 
-## 2. Status cleanup — only used statuses remain
-
-**Lead Status (one shared list, system-managed and read-only):**
-
-| Status | Used by | Set when |
-|---|---|---|
-| New | Buyer + Seller | Lead added manually or by import |
-| Fresh Lead | Buyer + Seller | Lead added by API or campaign |
-| Requested | Buyer | An active Requested Interest exists |
-| Offer Sent | Buyer | An active Offer Sent / Viewed Interest exists |
-| **Pricing** (new) | Seller | A Unit is Pricing Requested or Price Proposed |
-| **Listed** (new) | Seller | A Unit is Listed or Verification Due |
-| Negotiating | Buyer + Seller | Buyer: Interest accepted or negotiating. Seller: any buyer Interest on his Unit is negotiating. |
-| Closing | Buyer + Seller | Interest in Closing / Unit Under Contract |
-| Closed Won | Buyer + Seller | Contract signed with evidence / Unit Sold |
-
-**Removed:** Contacted, Nurture, Qualified, Converted, Unqualified and Junk (the upstream CRM defaults), plus the legacy Offer Selected. None of these is reachable in either cycle.
-
-How the removal stays safe:
-- The cleanup runs from the app, not SQL, on migrate and on new installs.
-- Any Lead still holding a removed status is **recalculated by the rollup**, not forced to New.
-- Status-change history keeps the old names as text, so the audit trail is preserved.
-- The upstream "Convert to Deal" sets Qualified only if that status exists, so removing it is safe.
-
-The earlier cleanup (commit `7d3da55`) reset Leads to New with raw SQL. This version avoids that.
-
-**Other status lists checked:** All 15 Interest row statuses, all 7 action statuses and all 3 Unit statuses are used, so they stay. These old meeting purposes are no longer offered to agents: General Meeting, Meeting with Owner, Discovery Meeting, Offer Review, Negotiation Meeting and Meeting Confirmation. They stay in the field options only so that historical records still validate when saved.
-
-## 3. Seller actions and next states
-
-**Lead-level actions (same gate as the Buyer):**
-
-| Seller qualification | Allowed actions | Effect |
-|---|---|---|
-| Not yet qualified | Call (Initial Qualification), WhatsApp | Answered requires Interested / Not Interested. Interested requires Add Property in the same submit. |
-| Interested | Add Property (another Unit), General Follow-up call, Explore Meeting (unit visit) | Each new Unit becomes an independent row |
-| Not Interested | None; a manager requalifies with a reason | — |
-
-**Unit row actions:**
-
-| Unit row status | Row actions | Next row statuses |
-|---|---|---|
-| Pricing Requested | **Agent Pricing** (proposed Over Price, basis, optional private file); Pricing Follow-up call | Price Proposed, Withdrawn |
-| Price Proposed | **Price Decision**: Accept / Owner sets own price / Re-price / Declines; Pricing Follow-up call | Listed, Pricing Requested, Withdrawn |
-| Listed | Early **Availability Verification** / unit update call (price change, unavailable) | Verification Due (when the 3-month date arrives), Pricing Requested, Off Market, Withdrawn, Under Contract (buyer Closing) |
-| Verification Due | Complete the open **Availability Verification** call | Listed (+3 months), Pricing Requested, Off Market, Withdrawn, Under Contract |
-| Off Market | Follow-up call (required, with date) | Listed, Withdrawn |
-| Under Contract | Read-only; the buyer's closing workflow drives it | Sold, or Listed if the closing is abandoned |
-| Sold | Read-only | Terminal |
-| Withdrawn | Sales Manager reactivation only | Pricing Requested or Listed |
-
-**Seller Lead rollup:** The Lead takes the first status that applies, in this order:
-1. Closed Won, if any Unit is Sold through the CRM.
-2. Closing, if any Unit is Under Contract.
-3. Negotiating, if a buyer Interest on any of his Units is negotiating.
-4. Listed, if any Unit is Listed or Verification Due.
-5. Pricing, if any Unit is Pricing Requested or Price Proposed.
-6. Otherwise, New or Fresh Lead (the origin).
-
-## 4. Data changes (additive only)
-
-**On the Unit:**
-- `listing_status` (read-only)
-- `listing_reason`
-- `pricing_method`
-- `proposed_over_price`
-- `pricing_basis`
-- `pricing_file` (private, optional)
-- `last_verified_on`
-- `next_verification_due`
-- `verification_overdue`
-- `active_buyer_interest_count` and `total_buyer_interest_count`
-
-The counters are refreshed on every Interest transition and reconciled on migrate.
-
-**On actions:** The existing Lead Action Execution gains three new action types (Add Property, Agent Pricing, Price Decision), two new purposes (Pricing Follow-up, Availability Verification) and a new **Unit** scope. That scope gives each Unit its own lock: one open action per Unit, with no duplicate verifications.
-
-**Lead fields:** No new Lead fields. The existing Interested flag, no-answer counters and last-call fields are made visible for Sellers.
-
-**Scheduler:** Every day, a scheduled job does four things:
-- It marks Units Verification Due when their planned check date arrives.
-- It creates the verification action for any Listed Unit that lacks one, which covers migrated Units.
-- It flags overdue checks.
-- It alerts the Sales Manager.
-
-It never changes availability by itself; only the agent's recorded result does.
-
-## 5. Decisions needed (recommended answer in bold)
-
-1. **Seller-only statuses.** **Add only Pricing and Listed**, and reuse the shared ones. The alternative is to reuse Requested and Offer Sent for sellers, which is fewer names but confusing in reports.
-2. **Remove** Contacted, Nurture, Qualified, Converted, Unqualified, Junk and Offer Selected, with affected Leads recalculated by the rollup. **Yes.**
-3. Hide Units that are not Listed (Pricing Requested, Price Proposed, Off Market, Withdrawn) from buyer Smart Match. **Yes.** Primary developer Units are unaffected.
-4. Overdue verification: **7 days → Sales Manager alert; 14 days → excluded from new Smart Match results.** Existing buyer Interests are untouched.
-5. Unit sold elsewhere or withdrawn while buyers are interested: **block if a buyer is in Closing; otherwise flag the buyer Interests and notify their agents** (no auto-cancel).
-6. Existing Units at migration. Priced seller Units → **Listed, with the first verification spread over 30 days**. Unpriced seller Units → **Pricing Requested**, shown on the workboard without auto-creating actions.
-7. Agent's proposed price goes **directly to the owner**, with no manager approval. History is kept by Track Changes.
-8. Scope: the workflow applies to **any Unit owned by a Seller Lead (Resale, and Rental when owned)**. Primary developer Units have no seller workflow.
-9. Unit counter: **show active interested buyers as the headline and total ever in the details.**
-10. Log CRM-portal Unit views so the view count includes portal opens, not only Desk opens. **Yes.**
-
-If you approve, the build order is:
-1. Backend schema and patch.
-2. The shared engine extended to Sellers.
-3. Scheduler.
-4. Frontend (Seller flags card, Unit Workboard, Unit form panel).
-5. Tests.
-
-The two repositories will then be pushed with a deployment and test guide.
-
-## References
-
-[1]: https://dd.reso.org/DD2.0/Property/StandardStatus/ "RESO Data Dictionary 2.0 - StandardStatus field and lookup definitions"
-[2]: https://www.nar.realtor/the-facts/consumer-guide-what-goes-into-pricing-your-home "NAR Consumer Guide - What Goes Into Pricing Your Home"
-[3]: https://www.nar.realtor/determining-asking-price "NAR - Determining Asking Price"
-[4]: https://www.bayut.sa/blog/en/invest-in-saudi/trucheck/ "Bayut Saudi Arabia - TruCheck listing verification"
+- [RESO StandardStatus](https://dd.reso.org/DD2.0/Property/StandardStatus/) — explicit listing availability/status semantics.
+- [NAR: Determining Asking Price](https://www.nar.realtor/determining-asking-price) — agent advice with Owner decision.
+- [NAR: Listing Agreements](https://www.nar.realtor/the-facts/consumer-guide-listing-agreements) — agreement evidence concepts.
+- [Bayut TruCheck](https://www.bayut.sa/blog/en/invest-in-saudi/trucheck/) — verified/stale listing control concept.

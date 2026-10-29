@@ -52,7 +52,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Action Type",
-      "options": "Call\nAdd Interest\nMeeting\nShowing\nSend Offer\nOffer Decision\nNegotiation Follow-up\nClosing",
+      "options": "Call\nAdd Interest\nMeeting\nShowing\nSend Offer\nOffer Decision\nNegotiation Follow-up\nClosing\nAdd Property\nAgent Pricing\nPrice Decision\nListing Documents",
       "reqd": 1
     },
     {
@@ -60,7 +60,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Purpose",
-      "options": "\nInitial Qualification\nRequirements Discovery\nMeeting Confirmation\nShowing Confirmation\nOffer Follow-up\nOffer Decision\nNegotiation Follow-up\nGeneral Follow-up\nExplore Meeting\nOwner Meeting\nDeveloper Meeting\nContract Signing\nMatch Requested Unit\nGeneral Meeting\nMeeting with Owner\nDiscovery Meeting\nOffer Review\nNegotiation Meeting"
+      "options": "\nInitial Qualification\nRequirements Discovery\nMeeting Confirmation\nShowing Confirmation\nOffer Follow-up\nOffer Decision\nNegotiation Follow-up\nGeneral Follow-up\nExplore Meeting\nOwner Meeting\nDeveloper Meeting\nContract Signing\nMatch Requested Unit\nGeneral Meeting\nMeeting with Owner\nDiscovery Meeting\nOffer Review\nNegotiation Meeting\nListing Intake\nPrice Proposal\nPrice Decision\nPricing Follow-up\nDocuments Collection\nAvailability Verification"
     },
     {
       "fieldname": "meeting_review_status",
@@ -92,7 +92,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Action Scope",
-      "options": "Lead\nInterest\nBatch",
+      "options": "Lead\nInterest\nBatch\nUnit",
       "read_only": 1,
       "reqd": 1
     },
@@ -244,7 +244,7 @@
   ],
   "index_web_pages_for_search": 0,
   "links": [],
-  "modified": "2026-10-28 19:12:00.000000",
+  "modified": "2026-10-29 19:30:00.000000",
   "modified_by": "Administrator",
   "module": "Real Estate CRM Customs",
   "name": "Lead Action Execution",

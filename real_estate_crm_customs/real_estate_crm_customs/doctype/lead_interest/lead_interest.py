@@ -328,6 +328,37 @@ class LeadInterest(Document):
             frappe.throw(_("Primary Interests cannot use an Owner-owned Unit."))
         if self.is_new() or self.has_value_changed("unit") or self.has_value_changed("deal_type"):
             _validate_unit_listing_for_deal(self.get("deal_type"), unit.get("listing_purpose"), self.unit)
+            # The Unit picker is advisory. Imports and direct server callers
+            # also pass through this authoritative binding validation.
+            from real_estate_crm_customs.owner_workflow import unit_is_buyer_eligible
+
+            if not unit_is_buyer_eligible(unit):
+                frappe.throw(
+                    _("Unit {0} is not an active, Owner-verified listing and cannot be linked to a Buyer Interest.").format(self.unit),
+                    frappe.ValidationError,
+                )
+
+    def after_insert(self):
+        self._refresh_owner_unit_insights()
+
+    def on_update(self):
+        self._refresh_owner_unit_insights(include_previous=True)
+
+    def after_delete(self):
+        # Frappe invokes this after the physical delete, so query-based totals
+        # no longer include a manager-approved deleted Interest.
+        self._refresh_owner_unit_insights(include_previous=True)
+
+    def _refresh_owner_unit_insights(self, include_previous=False):
+        unit_names = {self.get("unit")}
+        if include_previous:
+            previous = self.get_doc_before_save()
+            if previous:
+                unit_names.add(previous.get("unit"))
+        from real_estate_crm_customs.owner_workflow import safely_refresh_unit_interest_counters
+
+        for unit_name in filter(None, unit_names):
+            safely_refresh_unit_interest_counters(unit_name)
 
     def on_trash(self):
         if not getattr(self.flags, "approved_interest_deletion", False):

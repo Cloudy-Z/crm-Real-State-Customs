@@ -118,6 +118,9 @@ def _set_lead_status(doc, status, action="System Action"):
         LEAD_STATUS_NEW: "gray",
         LEAD_STATUS_FRESH: "blue",
         LEAD_STATUS_REQUESTED: "orange",
+        "Pricing": "orange",
+        "Documents Pending": "yellow",
+        "Listed": "blue",
         LEAD_STATUS_OFFER_SENT: "blue",
         LEAD_STATUS_NEGOTIATING: "yellow",
         LEAD_STATUS_CLOSING: "orange",
@@ -174,9 +177,12 @@ def _validate_inventory_interest(category, units, allow_unavailable_units=None):
         unit = frappe.db.get_value(
             "Real Estate Unit",
             unit_name,
-            ["status", "owner_lead", "inventory_type"],
+            ["status", "owner_lead", "inventory_type", "listing_status", "next_verification_due"],
             as_dict=True,
         )
+        from real_estate_crm_customs.owner_workflow import unit_is_buyer_eligible
+        if not unit_is_buyer_eligible(unit):
+            frappe.throw(_("Unit {0} is not an active, Owner-verified listing.").format(unit_name))
         if unit.status != "Available" and unit_name not in allowed_unavailable:
             frappe.throw(_("Unit {0} is not available.").format(unit_name))
         if unit.inventory_type and unit.inventory_type != category:
@@ -786,8 +792,8 @@ def get_lead_upcoming_events(lead):
 @frappe.whitelist()
 def create_resale_unit(
     owner_lead,
-    project,
-    unit_number,
+    project=None,
+    unit_number=None,
     physical_unit_type=None,
     floor=None,
     bua=None,
@@ -803,63 +809,61 @@ def create_resale_unit(
     listing_purpose=None,
     rental_monthly_rate=None,
     rental_daily_rate=None,
+    unit_data=None,
+    pricing_method=None,
 ):
-    """Create an Owner-listed Resale Unit for sale, for rent, or both."""
-    if not frappe.db.exists("CRM Lead", owner_lead):
-        frappe.throw(_("Lead {0} was not found.").format(owner_lead), frappe.DoesNotExistError)
-    lead = frappe.get_doc("CRM Lead", owner_lead)
+    """Compatibility endpoint for Owner Unit creation.
+
+    Existing callers may retain the historical positional arguments. New callers
+    can send ``unit_data`` containing all editable Unit intake fields. Both
+    paths use the Owner workflow service so an incomplete listing never becomes
+    Buyer-matchable on insert.
+    """
+    lead = _get_lead_doc(owner_lead)
     _assert_write_permission(lead)
     if not _is_owner_role(lead.get("party_type")):
         frappe.throw(_("Only Owner leads can list resale units."), frappe.ValidationError)
-    if not project:
-        frappe.throw(_("Compound is required."), frappe.ValidationError)
-    if not unit_number:
-        frappe.throw(_("Unit Number is required."), frappe.ValidationError)
-    if not physical_unit_type:
-        frappe.throw(_("A physical Unit Type is required."), frappe.ValidationError)
-    if not finishing_type or not delivery_date:
-        frappe.throw(_("Finishing Type and Delivery Date are required."), frappe.ValidationError)
-    if price not in (None, "") and all(value in (None, "") for value in (paid, over_price, remaining)):
-        frappe.throw(
-            _("Legacy Asking Price is ambiguous. Enter Paid, Over Price, and Remaining so Total Gross can be calculated."),
-            frappe.ValidationError,
-        )
-    from real_estate_crm_customs.real_estate_crm_customs.doctype.real_estate_unit.real_estate_unit import (
-        LISTING_PURPOSES,
-        default_listing_purpose,
-        is_listed_for_rent,
-    )
-    # The Owner's intent is the default; the agent may still choose per Unit.
-    listing_purpose = listing_purpose or default_listing_purpose(owner_lead)
-    if listing_purpose not in LISTING_PURPOSES:
-        frappe.throw(_("Listing Purpose must be For Sale, For Rent, or For Sale or Rent."), frappe.ValidationError)
-    if not is_listed_for_rent(listing_purpose):
-        rental_monthly_rate = rental_daily_rate = None
-    unit = frappe.get_doc({
-        "doctype": "Real Estate Unit",
-        "project": project,
-        "unit_number": unit_number,
-        "inventory_type": "Resale",
-        "physical_unit_type": physical_unit_type,
-        "floor": floor,
-        "bua": bua,
-        "bedrooms": bedrooms,
-        "bathrooms": bathrooms,
-        "finishing_type": finishing_type,
-        "delivery_date": delivery_date,
-        "status": "Available",
-        "paid": paid,
-        "over_price": over_price,
-        "over_is_gross": _to_int(over_is_gross),
-        "remaining": remaining,
-        # Keep the old argument as an explicitly labelled compatibility value.
-        "price": price,
-        "owner_lead": owner_lead,
-        "listing_purpose": listing_purpose,
-        "rental_monthly_rate": rental_monthly_rate,
-        "rental_daily_rate": rental_daily_rate,
-    })
-    unit.insert()
+    _lock_lead_workflow(owner_lead)
+    from real_estate_crm_customs.owner_workflow import _create_owner_unit, reconcile_owner_lead_rollup
+
+    if unit_data:
+        if isinstance(unit_data, str):
+            try:
+                payload = json.loads(unit_data)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                frappe.throw(_("Unit data must be valid JSON."), frappe.ValidationError)
+        else:
+            payload = dict(unit_data)
+    else:
+        if not project or not unit_number or not physical_unit_type:
+            frappe.throw(_("Compound, Unit Number, and Unit Type are required."), frappe.ValidationError)
+        if not finishing_type or not delivery_date:
+            frappe.throw(_("Finishing Type and Delivery Date are required."), frappe.ValidationError)
+        if price not in (None, "") and all(value in (None, "") for value in (paid, over_price, remaining)):
+            frappe.throw(
+                _("Legacy Asking Price is ambiguous. Enter Paid, Over Price, and Remaining so Total Gross can be calculated."),
+                frappe.ValidationError,
+            )
+        payload = {
+            "project": project,
+            "unit_number": unit_number,
+            "physical_unit_type": physical_unit_type,
+            "floor": floor,
+            "bua": bua,
+            "bedrooms": bedrooms,
+            "bathrooms": bathrooms,
+            "finishing_type": finishing_type,
+            "delivery_date": delivery_date,
+            "paid": paid,
+            "over_price": over_price,
+            "over_is_gross": _to_int(over_is_gross),
+            "remaining": remaining,
+            "listing_purpose": listing_purpose,
+            "rental_monthly_rate": rental_monthly_rate,
+            "rental_daily_rate": rental_daily_rate,
+        }
+    unit = _create_owner_unit(lead, payload, pricing_method)
+    reconcile_owner_lead_rollup(owner_lead, "Owner Unit created")
     return unit.as_dict()
 
 
@@ -941,19 +945,30 @@ def release_rented_unit(unit, note=None):
     if unit_doc.status != "Rented":
         frappe.throw(_("Only a Rented Unit can be returned to the market."), frappe.ValidationError)
     from real_estate_crm_customs.workflow_context import unit_mutation_context
+    from frappe.utils import nowdate
     previous_interest = unit_doc.get("sold_interest")
     with unit_mutation_context("lease_release"):
-        frappe.db.set_value(
-            "Real Estate Unit",
-            unit,
-            {"status": "Available", "closing_interest": None, "sold_interest": None},
-        )
+        unit_doc.status = "Available"
+        unit_doc.closing_interest = None
+        unit_doc.sold_interest = None
+        # Do not silently relist a Unit when its lease ends. The Owner must
+        # validate availability before Buyer Smart Match sees it again.
+        if unit_doc.get("owner_lead"):
+            unit_doc.listing_status = "Verification Due"
+            unit_doc.listing_status_reason = _("Lease ended; Owner availability confirmation is required before relisting.")
+            unit_doc.next_verification_due = nowdate()
+        unit_doc.save(ignore_permissions=True)
     unit_doc.add_comment(
         "Info",
         _("Lease ended; Unit returned to the market by {0}. Previous rental Interest: {1}. {2}").format(
             frappe.session.user, previous_interest or "-", (note or "").strip()
         ).strip(),
     )
+    if unit_doc.get("owner_lead"):
+        from real_estate_crm_customs.owner_workflow import _ensure_verification_action, reconcile_owner_lead_rollup
+
+        _ensure_verification_action(unit_doc)
+        reconcile_owner_lead_rollup(unit_doc.owner_lead, "Lease release requires Owner verification")
     return frappe.get_doc("Real Estate Unit", unit).as_dict()
 
 
@@ -984,7 +999,19 @@ def assign_property_unit_to_owner(lead, unit):
             )
         unit_doc.inventory_type = "Resale"
     unit_doc.owner_lead = lead
-    unit_doc.save()
+    # Converted historical inventory must enter the Owner listing workflow
+    # before it is eligible for Buyer selection.
+    from real_estate_crm_customs.owner_workflow import _initial_listing_status, reconcile_owner_lead_rollup
+    from real_estate_crm_customs.workflow_context import unit_mutation_context
+
+    if not unit_doc.get("pricing_method"):
+        unit_doc.pricing_method = "Owner Price"
+    if not unit_doc.get("listing_status"):
+        unit_doc.listing_status = _initial_listing_status(unit_doc)
+        unit_doc.listing_status_reason = _("Assigned to Owner; complete the guided listing workflow.")
+    with unit_mutation_context("owner_assignment"):
+        unit_doc.save()
+    reconcile_owner_lead_rollup(lead, "Unit assigned to Owner")
     return unit_doc.as_dict()
 
 
@@ -1259,6 +1286,8 @@ def get_available_units_for_selection(
         "rental_monthly_rate",
         "rental_daily_rate",
         "owner_lead",
+        "listing_status",
+        "next_verification_due",
         "modified",
     ]
     units = frappe.get_all(
@@ -1305,7 +1334,11 @@ def get_available_units_for_selection(
                 for row in _get_standalone_interests(lead_doc.name, include_closed=False)
                 if row.unit and row.unit != allowed_existing
             )
-    units = [unit for unit in units if unit.name not in already_linked]
+    # ``include_unit`` is a user-experience convenience, never a bypass for an
+    # incomplete or stale Owner listing. Blank lifecycle state is retained only
+    # for historical Units created before this workflow was introduced.
+    from real_estate_crm_customs.owner_workflow import unit_is_buyer_eligible
+    units = [unit for unit in units if unit.name not in already_linked and unit_is_buyer_eligible(unit)]
 
     project_names = list({unit.project for unit in units if unit.project})
     projects = {}
@@ -1367,19 +1400,16 @@ def get_property_match_filter_options(interest_category="Resale", inventory_sear
         order_by="destination_name asc",
         limit_page_length=500,
     )
-    unit_types = frappe.get_all(
+    candidate_units = frappe.get_all(
         "Real Estate Unit",
         filters=unit_filters,
-        pluck="physical_unit_type",
+        fields=["name", "physical_unit_type", "finishing_type", "owner_lead", "listing_status", "next_verification_due"],
         limit_page_length=500,
     )
-    finishing_types = frappe.get_all(
-        "Real Estate Unit",
-        filters=unit_filters,
-        pluck="finishing_type",
-        limit_page_length=500,
-    )
-    unit_type_names = sorted(set(filter(None, unit_types)))
+    from real_estate_crm_customs.owner_workflow import unit_is_buyer_eligible
+    candidate_units = [unit for unit in candidate_units if unit_is_buyer_eligible(unit)]
+    unit_type_names = sorted(set(filter(None, (unit.physical_unit_type for unit in candidate_units))))
+    finishing_types = [unit.finishing_type for unit in candidate_units]
     # Category of every Unit Type in stock, so the client can narrow Unit Type by Category.
     unit_type_categories = {}
     if unit_type_names:

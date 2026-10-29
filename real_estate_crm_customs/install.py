@@ -204,6 +204,20 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                     {"name": "column_unit_financial_b", "fields": ["property_tax", "commission", "total_price_net", "total_gross", "maintenance", "rental_monthly_rate", "rental_daily_rate"]},
                 ],
             },
+            {
+                "label": "Owner Listing Intake",
+                "name": "unit_owner_listing_intake_section",
+                "columns": [
+                    {
+                        "name": "column_unit_owner_listing_intake_a",
+                        "fields": ["pricing_method", "listing_status", "listing_status_reason"],
+                    },
+                    {
+                        "name": "column_unit_owner_listing_intake_b",
+                        "fields": ["owner_lead", "listing_purpose", "status"],
+                    },
+                ],
+            },
         ],
     },
     "Real Estate Unit-Side Panel": {
@@ -251,6 +265,47 @@ REAL_ESTATE_FIELD_LAYOUTS = {
                     {
                         "name": "column_unit_rental_data",
                         "fields": ["rental_monthly_rate", "rental_daily_rate"],
+                    }
+                ],
+            },
+            {
+                "label": "Owner Listing Workflow",
+                "name": "unit_owner_listing_data_section",
+                "opened": True,
+                "columns": [
+                    {
+                        "name": "column_unit_owner_listing_a",
+                        "fields": ["pricing_method", "listing_status", "listing_status_reason", "proposed_over_price", "proposed_monthly_rent", "proposed_daily_rent", "pricing_basis", "price_proposed_on"],
+                    },
+                    {
+                        "name": "column_unit_owner_listing_b",
+                        "fields": ["listed_on", "last_verified_on", "next_verification_due"],
+                    },
+                ],
+            },
+            {
+                "label": "Owner Documents and Listing Agreement",
+                "name": "unit_owner_documents_data_section",
+                "opened": True,
+                "columns": [
+                    {
+                        "name": "column_unit_owner_documents_a",
+                        "fields": ["owner_documents", "listing_agreement_type", "listing_agreement_reference"],
+                    },
+                    {
+                        "name": "column_unit_owner_documents_b",
+                        "fields": ["listing_agreement_signed_on", "listing_agreement_expires_on", "listing_commission_percent", "listing_agreement_file"],
+                    },
+                ],
+            },
+            {
+                "label": "Buyer Interest Insights",
+                "name": "unit_buyer_interest_data_section",
+                "opened": True,
+                "columns": [
+                    {
+                        "name": "column_unit_buyer_interest_data",
+                        "fields": ["active_buyer_interest_count", "total_buyer_interest_count"],
                     }
                 ],
             },
@@ -545,6 +600,11 @@ def sync_real_estate_crm_defaults():
     from real_estate_crm_customs.patches.v16_0.closing_requirements_and_meetings import execute
 
     execute()
+    # Owner listing lifecycle is a separate authority from Buyer Interests.
+    # Its reconciliation is idempotent and never creates evidence facts.
+    from real_estate_crm_customs.owner_workflow import reconcile_owner_workflow
+
+    reconcile_owner_workflow()
 
 
 def migrate_standalone_lead_interests():
@@ -660,6 +720,11 @@ def ensure_real_estate_lead_statuses():
         {"lead_status": "New", "type": "Open", "color": "gray", "position": 5},
         {"lead_status": "Fresh Lead", "type": "Open", "color": "blue", "position": 10},
         {"lead_status": "Requested", "type": "Ongoing", "color": "orange", "position": 20},
+        # Owner-only rollups from owned Units. Buyer statuses remain derived
+        # exclusively from standalone Lead Interest lifecycle records.
+        {"lead_status": "Pricing", "type": "Ongoing", "color": "orange", "position": 22},
+        {"lead_status": "Documents Pending", "type": "Ongoing", "color": "yellow", "position": 24},
+        {"lead_status": "Listed", "type": "Ongoing", "color": "blue", "position": 26},
         {"lead_status": "Offer Sent", "type": "Ongoing", "color": "blue", "position": 30},
         {"lead_status": "Negotiating", "type": "Ongoing", "color": "yellow", "position": 40},
         # Offer Selected is retained if historic CRM metadata uses it, but is

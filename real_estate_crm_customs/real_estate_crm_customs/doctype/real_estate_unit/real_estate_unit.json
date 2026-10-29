@@ -46,6 +46,30 @@
     "property_location_note",
     "sku",
     "created_by",
+    "owner_listing_section",
+    "pricing_method",
+    "listing_status",
+    "listing_status_reason",
+    "column_break_owner_listing",
+    "proposed_over_price",
+    "proposed_monthly_rent",
+    "proposed_daily_rent",
+    "pricing_basis",
+    "price_proposed_on",
+    "column_break_owner_listing_b",
+    "listed_on",
+    "last_verified_on",
+    "next_verification_due",
+    "verification_alert_sent_on",
+    "owner_documents_section",
+    "owner_documents",
+    "listing_agreement_type",
+    "listing_agreement_reference",
+    "column_break_listing_agreement",
+    "listing_agreement_signed_on",
+    "listing_agreement_expires_on",
+    "listing_commission_percent",
+    "listing_agreement_file",
     "financial_information_section",
     "paid",
     "over_price",
@@ -63,6 +87,10 @@
     "rental_information_section",
     "rental_monthly_rate",
     "rental_daily_rate",
+    "buyer_interest_section",
+    "active_buyer_interest_count",
+    "column_break_buyer_interest",
+    "total_buyer_interest_count",
     "scheduled_showings_section",
     "scheduled_showings"
   ],
@@ -359,6 +387,148 @@
       "read_only": 1
     },
     {
+      "fieldname": "owner_listing_section",
+      "fieldtype": "Section Break",
+      "label": "Owner Listing Workflow",
+      "depends_on": "eval:doc.owner_lead"
+    },
+    {
+      "fieldname": "pricing_method",
+      "fieldtype": "Select",
+      "label": "Pricing Method",
+      "options": "\nOwner Price\nAgent Pricing",
+      "depends_on": "eval:doc.owner_lead",
+      "description": "Owner Price: the owner sets the asking price. Agent Pricing: the owner asks the agent to propose a price."
+    },
+    {
+      "fieldname": "listing_status",
+      "fieldtype": "Select",
+      "label": "Listing Status",
+      "read_only": 1,
+      "in_standard_filter": 1,
+      "options": "\nPricing Requested\nPrice Proposed\nDocuments Pending\nListed\nVerification Due\nOff Market\nWithdrawn",
+      "description": "Managed by the Owner workflow actions."
+    },
+    {
+      "fieldname": "listing_status_reason",
+      "fieldtype": "Small Text",
+      "label": "Listing Status Reason",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_owner_listing",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "proposed_over_price",
+      "fieldtype": "Currency",
+      "label": "Agent Proposed Over Price",
+      "read_only": 1
+    },
+    {
+      "fieldname": "proposed_monthly_rent",
+      "fieldtype": "Currency",
+      "label": "Agent Proposed Rent Per Month",
+      "read_only": 1
+    },
+    {
+      "fieldname": "proposed_daily_rent",
+      "fieldtype": "Currency",
+      "label": "Agent Proposed Rent Per Day",
+      "read_only": 1
+    },
+    {
+      "fieldname": "pricing_basis",
+      "fieldtype": "Small Text",
+      "label": "Pricing Basis",
+      "read_only": 1,
+      "description": "Comparable units and reasoning behind the agent's proposal."
+    },
+    {
+      "fieldname": "price_proposed_on",
+      "fieldtype": "Date",
+      "label": "Price Proposed On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_owner_listing_b",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "listed_on",
+      "fieldtype": "Date",
+      "label": "Listed On",
+      "read_only": 1
+    },
+    {
+      "fieldname": "last_verified_on",
+      "fieldtype": "Date",
+      "label": "Availability Last Verified",
+      "read_only": 1
+    },
+    {
+      "fieldname": "next_verification_due",
+      "fieldtype": "Date",
+      "label": "Next Availability Verification",
+      "read_only": 1,
+      "in_standard_filter": 1
+    },
+    {
+      "fieldname": "verification_alert_sent_on",
+      "fieldtype": "Date",
+      "label": "Overdue Alert Sent On",
+      "read_only": 1,
+      "hidden": 1
+    },
+    {
+      "fieldname": "owner_documents_section",
+      "fieldtype": "Section Break",
+      "label": "Owner Documents and Listing Agreement",
+      "depends_on": "eval:doc.owner_lead"
+    },
+    {
+      "fieldname": "owner_documents",
+      "fieldtype": "Table",
+      "label": "Owner Documents",
+      "options": "Real Estate Unit Document"
+    },
+    {
+      "fieldname": "listing_agreement_type",
+      "fieldtype": "Select",
+      "label": "Listing Agreement Type",
+      "options": "\nExclusive\nNon-Exclusive"
+    },
+    {
+      "fieldname": "listing_agreement_reference",
+      "fieldtype": "Data",
+      "label": "Listing Agreement Reference"
+    },
+    {
+      "fieldname": "column_break_listing_agreement",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "listing_agreement_signed_on",
+      "fieldtype": "Date",
+      "label": "Agreement Signed On"
+    },
+    {
+      "fieldname": "listing_agreement_expires_on",
+      "fieldtype": "Date",
+      "label": "Agreement Expires On"
+    },
+    {
+      "fieldname": "listing_commission_percent",
+      "fieldtype": "Percent",
+      "label": "Agreed Commission %"
+    },
+    {
+      "fieldname": "listing_agreement_file",
+      "fieldtype": "Attach",
+      "label": "Signed Listing Agreement",
+      "description": "Optional private copy of the signed owner-broker agreement."
+    },
+    {
       "depends_on": "eval:doc.listing_purpose != 'For Rent'",
       "fieldname": "financial_information_section",
       "fieldtype": "Section Break",
@@ -370,14 +540,14 @@
       "fieldname": "paid",
       "fieldtype": "Currency",
       "label": "Paid",
-      "mandatory_depends_on": "eval:doc.inventory_type == 'Resale' && doc.listing_purpose != 'For Rent'"
+      "mandatory_depends_on": "eval:doc.inventory_type == 'Resale' && doc.listing_purpose != 'For Rent' && !(doc.listing_status == 'Pricing Requested' || doc.listing_status == 'Price Proposed' || (!doc.listing_status && doc.pricing_method == 'Agent Pricing'))"
     },
     {
       "default": "0",
       "fieldname": "over_price",
       "fieldtype": "Currency",
       "label": "Over Price",
-      "mandatory_depends_on": "eval:doc.listing_purpose != 'For Rent'"
+      "mandatory_depends_on": "eval:doc.listing_purpose != 'For Rent' && !(doc.listing_status == 'Pricing Requested' || doc.listing_status == 'Price Proposed' || (!doc.listing_status && doc.pricing_method == 'Agent Pricing'))"
     },
     {
       "default": "0",
@@ -402,7 +572,7 @@
       "fieldname": "remaining",
       "fieldtype": "Currency",
       "label": "Remaining",
-      "mandatory_depends_on": "eval:doc.listing_purpose != 'For Rent'"
+      "mandatory_depends_on": "eval:doc.listing_purpose != 'For Rent' && !(doc.listing_status == 'Pricing Requested' || doc.listing_status == 'Price Proposed' || (!doc.listing_status && doc.pricing_method == 'Agent Pricing'))"
     },
     {
       "fieldname": "column_break_financial",
@@ -467,6 +637,32 @@
       "label": "Rent Per Day"
     },
     {
+      "fieldname": "buyer_interest_section",
+      "fieldtype": "Section Break",
+      "label": "Buyer Interest"
+    },
+    {
+      "fieldname": "active_buyer_interest_count",
+      "fieldtype": "Int",
+      "label": "Active Interested Buyers",
+      "read_only": 1,
+      "default": "0",
+      "in_list_view": 0,
+      "description": "Buyer leads with an active Interest on this Unit. Updated automatically."
+    },
+    {
+      "fieldname": "column_break_buyer_interest",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "total_buyer_interest_count",
+      "fieldtype": "Int",
+      "label": "All-Time Interested Buyers",
+      "read_only": 1,
+      "default": "0",
+      "description": "Buyer leads that ever had an Interest on this Unit, including closed ones."
+    },
+    {
       "collapsible": 1,
       "fieldname": "scheduled_showings_section",
       "fieldtype": "Section Break",
@@ -480,7 +676,7 @@
     }
   ],
   "links": [],
-  "modified": "2026-10-28 19:00:00.000000",
+  "modified": "2026-10-29 19:30:00.000000",
   "modified_by": "Administrator",
   "module": "Real Estate CRM Customs",
   "name": "Real Estate Unit",

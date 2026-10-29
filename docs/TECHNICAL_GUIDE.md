@@ -1,7 +1,7 @@
 # Real Estate CRM: Technical Guide
 
 **Audience:** developers, implementers, administrators, and anyone who needs to understand how the system works.
-**Snapshot:** 28 October 2026. Custom app `crm-Real-State-Customs` on `main` at `fcc458c`. CRM fork `crm-Real-State` on `develop` at `1810fd3c`.
+**Snapshot:** 29 October 2026. Owner Lead / Unit listing workflow release (commit hashes are recorded in Change history after release).
 **Companion files:** [`AGENTS.md`](../AGENTS.md) is the condensed rulebook for AI coding agents. The editable diagrams in [`diagrams/`](diagrams/) are the sources for every diagram in this guide.
 
 ---
@@ -31,7 +31,7 @@
 21. [Deployment](#21-deployment)
 22. [Troubleshooting](#22-troubleshooting)
 23. [Change history](#23-change-history)
-24. [Open work](#24-open-work)
+24. [Implementation status](#24-implementation-status)
 
 ---
 
@@ -67,17 +67,19 @@ flowchart LR
         CRM["App: crm<br/>Frappe CRM fork<br/>CRM Lead, CRM Deal, views, Data Import page"]
         subgraph CustomParts["App: real_estate_crm_customs (repo: crm-Real-State-Customs, branch main)"]
             API["api.py<br/>whitelisted workflow API, Smart Match, guards"]
-            IW["interest_workflow.py<br/>Interest lifecycle, locks, closing, Lead rollup"]
+            IW["interest_workflow.py<br/>Buyer Interest lifecycle, locks, closing, Buyer rollup"]
+            OW["owner_workflow.py<br/>Owner listing, evidence, counters, verification"]
             Policy["requirement_policy.py / party_roles.py /<br/>unit_financials.py / workflow_context.py"]
             DT["DocTypes<br/>Unit, Compound, Developer, Destination,<br/>Unit Type, Unit Category, Amenity,<br/>Lead Interest, Lead Action Execution, audit tables"]
             Install["install.py + patches + fixtures<br/>(after_install / after_migrate)"]
-            Sched["Scheduler<br/>hourly lead age, daily delivery status"]
+            Sched["Scheduler<br/>hourly lead age, daily delivery status,<br/>daily Owner verification"]
         end
         DB[("MariaDB")]
     end
     Portal -- "frappe.call / REST" --> API
     Desk -- "frappe.call / form save" --> DT
     API --> IW
+    API --> OW
     API --> Policy
     IW --> DT
     API --> DT
@@ -110,7 +112,7 @@ Design principles:
 | **Destination** | The area or city (for example New Cairo or North Coast). Required on every property requirement. |
 | **Interest** | One Buyer requirement (Requested) or one Unit offered to a Buyer (Matched and later states). Each Interest progresses on its own. |
 | **Action** | Something the agent does or plans to do: Call, Add Interest, Meeting, Showing, Send Offer, Offer Decision, Negotiation Follow-up, Closing. |
-| **Lead status** | A read-only summary of the Lead's Interests, used for pipeline reporting. |
+| **Lead status** | A read-only pipeline summary: Buyer status comes from Interests; Owner status comes from owned Unit listing/commercial facts. |
 | **Qualification** | `interest_status` = Interested / Not Interested. A separate read-only flag. |
 
 ## 4. Data model
@@ -144,7 +146,7 @@ erDiagram
 
 | DocType | Kind | Import | Change log | Purpose and key rules |
 |---|---|---|---|---|
-| Real Estate Unit | Master | Yes | Yes (views tracked too) | Inventory. Required: Unit Number, Compound (`project`), Inventory Type, Listing Purpose, Area UOM, Bedrooms, Bathrooms, Status. SKU, Master Compound, Destination, Developer, totals and delivery status are calculated. |
+| Real Estate Unit | Master | Yes | Yes (views tracked too) | Inventory plus Owner listing lifecycle, private evidence/agreement rows, verification dates and active/total Buyer counters. SKU, master compound, destination, developer, totals and delivery status are calculated. |
 | Real Estate Project (shown as **Compound**) | Master | Yes | Yes | `record_type` Compound or Phase. A Phase needs `parent_compound` and inherits Developer and Destination from it. Status is optional. |
 | Property Developer | Master | Yes | No | Only Developer Name is required. Founded In is an optional date. Founders are optional. |
 | Real Estate Destination | Master | Yes | No | Areas and cities. |
@@ -156,6 +158,7 @@ erDiagram
 | Lead Action Interest Scope | Child | No | — | Which Interests an action covers and locks. |
 | Lead Interest Transition / Lead Status Transition | Audit | **No** | — | Append-only history of every state change. |
 | Unit Scheduled Showing | Child of Unit | — | — | Showings planned for the Unit. |
+| Real Estate Unit Document | Child of Unit | — | — | Owner ownership/ID/legal evidence; files must be private. |
 | Real Estate Compound Amenity / Compound Unit Type | Child of Compound | — | — | Amenities and available Unit Types. |
 | Real Estate Compound Phase | Child of Compound | — | — | **Legacy**, read-only. Phases are now Compound records. |
 | Property Developer Founder | Child of Developer | — | — | Optional. Fully empty rows are dropped on save. |
@@ -249,7 +252,9 @@ flowchart TD
 | Not yet qualified as Interested | Call: Initial Qualification |
 | Interested | Add Interest (Requirements Discovery), Call (General Follow-up), Meeting (Explore Meeting) |
 | Interested, with Matched Interests that have no open action | plus **Send Offer** (one WhatsApp message for the selected Units) |
-| Owner Lead | None yet (see [Open work](#24-open-work)) |
+| Owner Lead not yet qualified | Call: Initial Qualification |
+| Interested Owner Lead | Add Property (full Unit intake), Call (General Follow-up), Meeting (Explore Meeting) |
+| Owned Unit | Agent Pricing, Price Decision, Listing Documents or Availability Verification according to its listing state |
 
 **Interest-level actions (on each Workboard row):**
 
@@ -366,12 +371,61 @@ A Property Setter makes `status` read-only, and the CRM Lead `validate` hook (`g
 
 ## 8. Owners and Units
 
-- An Owner Lead adds Units from **Add Property** on the Lead page (`create_resale_unit`), or links existing Units (`assign_property_unit_to_owner`).
-- `owner_lead` on a Unit may point only to an Owner Lead. A Buyer can never own a Unit; Buyers are linked to Units through Interests.
-- A Lead's role cannot change while it owns Units (Owner) or has Interests (Buyer).
-- `owner_intent` (Sell / Rent / Sell or Rent) gives the default Listing Purpose for new Units from that Owner.
-- The Lead page **Properties** tab shows an Owner's Units, or a Buyer's linked Units.
-- A guided Owner workflow (calls, pricing, listing, three-monthly availability checks) is designed but **not built yet**. See [Open work](#24-open-work).
+An Owner Lead has its own guided acquisition/listing workflow. It deliberately does **not** use Buyer `Lead Interest` transitions: a Buyer’s commercial progression remains authoritative per Interest, while the Owner’s progression is authoritative per owned Unit. Both sides create immutable `Lead Action Execution` activity, but Owner Unit actions use `scope_type = Unit`, never an Interest scope.
+
+```mermaid
+flowchart TD
+    N[New or Fresh Owner Lead] --> C[Initial Qualification Call]
+    C -->|No Answer| C
+    C -->|Answered: Not Interested| STOP[No open action; manager requalification only]
+    C -->|Answered: Interested| INTAKE[Full sectioned Add Property intake]
+    INTAKE -->|Owner Price| DOCS[Documents Pending]
+    INTAKE -->|Agent Pricing| PR[Pricing Requested]
+    PR --> PROP[Agent price proposal and basis]
+    PROP --> DEC{Owner price decision}
+    DEC -->|Accept proposal / set own price| DOCS
+    DEC -->|Re-price| PR
+    DEC -->|Decline| WITHDRAWN[Withdrawn]
+    DOCS -->|Price + proof + ID + signed agreement verified| LISTED[Listed and Buyer-matchable]
+    LISTED -->|3 months| DUE[Verification Due]
+    DUE -->|Still available| LISTED
+    DUE -->|Temporarily unavailable| OFF[Off Market]
+    DUE -->|Re-price| PR
+    DUE -->|Withdrawn / sold elsewhere| WITHDRAWN
+    OFF -->|future verification says available| LISTED
+```
+
+### 8.1 Owner Lead actions and rollup
+
+- An Owner Lead begins with **Initial Qualification Call**. Answered calls require `Interested` or `Not Interested`; the existing no-answer streak, lifetime total and latest-call facts are shared with Buyer Leads. The flags are now visible to Owner agents.
+- Once Interested, the Lead panel offers **Add Property**, General Follow-up and Explore Meeting. Add Property opens the same full, tabbed/sectioned Unit intake layout used by the Unit form; it is not a compact subset of fields.
+- A full Add Property submission creates a Resale Unit owned by the current Owner, a completed audit action, and exactly one successor Unit action: Agent Pricing, Documents Collection or future Availability Verification according to the selected path.
+- Unit actions are **Agent Pricing**, **Price Decision**, **Listing Documents** and **Availability Verification**. There is at most one open required Owner action per Lead or Unit, protected by Lead/Unit row locks.
+- `reconcile_owner_lead_rollup()` derives Owner Lead status in this order: Closed Won, Closing, Negotiating, Listed, Documents Pending, Pricing, then the original New/Fresh status. Buyer Interest status never derives an Owner’s pricing/listing stage.
+- Buyer **Owner Meetings** and **Showings** still create an Event projection on the Owner Lead and a Unit showing row. Buyer Closing / signed contract changes the Unit availability and refreshes the Owner rollup; it does not substitute an Owner listing action.
+
+### 8.2 Listing gate and evidence
+
+A Unit cannot become **Listed** until the guided Documents action verifies all applicable facts:
+
+1. sale price and/or monthly/daily rent for the selected Listing Purpose;
+2. an accepted, privately uploaded Ownership Contract or Title Deed/Registration row;
+3. an accepted, privately uploaded Owner National ID / Passport row;
+4. Listing Agreement type, signed date and a privately uploaded signed agreement; and
+5. every uploaded owner document or agreement file is private.
+
+The Owner may choose **Owner Price** at intake or select **Agent Pricing**. Agent Pricing records comparable/recommendation basis and a proposed sale/rent price; the Owner accepts, sets a price, asks for re-pricing, or declines. The financial formula remains the canonical Unit formula; agent proposal fields are not the live Unit price until the Owner decides.
+
+### 8.3 Buyer visibility, counters and views
+
+- `unit_is_buyer_eligible()` is used by Smart Match, the manual Unit picker and the direct Interest-binding API. `LeadInterest.validate` is the final backstop. New Owner Units must be Listed and Available to become new Buyer candidates. Primary Units and historical Units without an Owner lifecycle value remain compatible.
+- A due verification gets a **14-day resolution grace** for matching; beyond it, the Unit is not newly matched until an agent records the Owner outcome. The scheduler never marks it available automatically.
+- `active_buyer_interest_count` and `total_buyer_interest_count` are distinct-Buyer projections refreshed after Interest insert, update, transition and physical deletion. The Unit form shows both.
+- Unit DocType change and view tracking are enabled. Because the portal reads through `frappe.client.get` (which does not create a View Log), `RealEstateForm.vue` calls `log_unit_view()` once per opened Unit. The Unit form displays the View Log count with active and total Buyer counts.
+
+### 8.4 Quarterly verification and recovery
+
+`run_daily_listing_verification()` scans owned, available Listed/Verification Due/Off Market Units. On the due date it moves Listed → Verification Due, creates/reconciles **one** Unit-scoped Availability Verification Call and Event, and writes an Owner Lead comment. Seven days overdue creates one manager-attention comment; it never silently changes availability. Outcomes are Still Available (renews three months), Temporarily Unavailable (future check required), Re-price, Withdrawn, or Sold Elsewhere. Only managers may reactivate Withdrawn Units. A manager who returns a Rented Unit to market must obtain a fresh Owner availability confirmation before matching resumes.
 
 ## 9. Closing and Unit status
 
@@ -531,7 +585,12 @@ All methods are in `real_estate_crm_customs.api` and are called with `frappe.cal
 |---|---|
 | `create_resale_unit(owner_lead, ...)` | Owner Add Property, for sale, rent or both. |
 | `assign_property_unit_to_owner(lead, unit)` | Link an existing Unit to an Owner. The old `assign_property_unit_to_seller` name still works for cached clients. |
-| `release_rented_unit(unit, note)` | Manager-only Return to Market. |
+| `release_rented_unit(unit, note)` | Manager-only Return to Market; requires new Owner confirmation before matching. |
+| `owner_workflow.get_owner_workflow_context(lead)` | Owner Lead actions, call facts, owned Unit cards and allowed next actions. |
+| `owner_workflow.create_owner_unit(lead, unit_data, pricing_method)` | Full sectioned Owner intake with audit row and successor action. |
+| `owner_workflow.submit_owner_action(...)`, `reschedule_owner_action(...)` | Atomic Owner action result and exactly one successor/Event. |
+| `owner_workflow.get_unit_insights(unit)`, `log_unit_view(unit)` | Live View Log, active Buyer and all linked-Buyer counters. |
+| `owner_workflow.reactivate_owner_unit(unit, reason)` | Manager-only recovery of a Withdrawn Owner listing. |
 | `get_lead_linked_units(lead)` | Units for the Properties tab. |
 | `get_lead_smart_events(lead)`, `get_lead_upcoming_events(lead)` | Events ordered by urgency and importance. |
 | `get_lead_progress(lead)` | Ideal and actual timeline for the graph. |
@@ -563,7 +622,7 @@ sequenceDiagram
     Dev->>UI: run the acceptance checklist of the release guide
 ```
 
-**What runs after every migrate** (`sync_real_estate_crm_defaults`): module definition, default Unit Types, Lead custom fields, User agent fields, the seven Lead statuses, phone-field cleanup, the read-only status Property Setter, Desk client scripts, portal layouts, standard views and quick filters, the standalone-Interest backfill, and a safe re-run of the closing/requirements patch logic. On first install it also seeds the Unit Categories, once.
+**What runs after every migrate** (`sync_real_estate_crm_defaults`): module definition, default Unit Types, Lead custom fields, User agent fields, all used Buyer/Owner Lead statuses, phone-field cleanup, the read-only status Property Setter, Desk client scripts, portal layouts, standard views and quick filters, standalone-Interest backfill, a safe re-run of closing/requirements logic, and idempotent Owner Unit counters/Lead rollups. On first install it also seeds Unit Categories once.
 
 **Rules for writing patches** (each one learned from a real failure):
 
@@ -591,6 +650,7 @@ sequenceDiagram
 | `v16_0.closing_requirements_and_meetings` | post | Closing fields, budget presence flags, meeting purpose migration. |
 | `v16_0.compound_phases_and_unit_categories` | post | Compound record types, Unit master compound backfill, one-time category seeding. |
 | `v16_0.rename_seller_to_owner_and_rentals` | post | Seller → Owner values, saved views and routes; Rental → Resale + For Rent; listing purpose backfill. |
+| `v16_0.owner_unit_listing_workflow` | post | Initializes safe Owner Unit listing states, reconciles Buyer counters and Owner Lead rollups. |
 
 ## 19. Importing data
 
@@ -623,6 +683,7 @@ PYTHONPATH=tests python3 -m unittest discover -s tests -p 'test_*.py'
 | `test_budget_presence.py`, `test_unit_financials.py` | Money rules |
 | `test_party_roles.py`, `test_owner_rename_and_rentals.py` | Roles, Owner rename, Sale/Rent rules and migration |
 | `test_compound_phases_and_categories.py`, `test_developer_founded_in.py` | Compounds, Phases, taxonomy, Developer rules |
+| `test_owner_listing_workflow.py` | Owner Unit pricing/listing eligibility, private legal evidence, scheduler registration and Buyer visibility gate |
 
 Also validate every JSON file with `orjson`, the strict parser Frappe uses (see `AGENTS.md`).
 
@@ -636,7 +697,7 @@ npx eslint <changed files>
 yarn build
 ```
 
-At this snapshot: backend 137 tests pass; frontend 159 tests in 11 files pass; the production build succeeds.
+At this snapshot: backend 144 tests pass; frontend 159 tests in 11 files pass; lint and the production build succeed.
 
 ## 21. Deployment
 
@@ -679,15 +740,14 @@ How to diagnose an unknown error: identify the lifecycle phase that fails (patch
 | 2026-10-27 | `fdd235f`, `85308aa` | Developer JSON repair, Founded In as an optional date, only Developer Name required |
 | 2026-10-28 | `bd83408` | Compound Phases, Unit Categories, import-ready Compound masters |
 | 2026-10-28 | `fcc458c` | Seller renamed to Owner; Sale/Rent model; Unit Category in Smart Match |
+| 2026-10-29 | pending release commit | Independent Owner Lead/Unit lifecycle, private listing evidence gate, quarterly verification, Buyer counters and portal view logging |
 
 Frontend highlights: `b925868c` (Link dropdown buttons no longer submit the action form) and `1810fd3c` (Owner role, Unit Category Smart Match filter, Buy/Rent requirements in the portal).
 
-## 24. Open work
+## 24. Implementation status
 
-These items were requested but are **not built yet**:
+The requested Owner Lead workflow, full sectioned Add Property form, Owner documents/agreement gate, quarterly availability verification, Unit Buyer-interest counters and CRM-portal Unit view logging are implemented in this release. The editable design is retained at [`proposals/owner_unit_workflow/`](proposals/owner_unit_workflow/seller_unit_workflow_design.md) as the implementation record.
 
-1. **Guided Owner workflow.** Owner calls, pricing chosen by the Owner or requested from the agent, listing, and an availability check every three months, mirroring the Buyer cycle. The design and its pending decisions are in [`proposals/owner_unit_workflow/`](proposals/owner_unit_workflow/seller_unit_workflow_design.md). It needs approval before coding.
-2. **Interested-Buyer counter on the Unit form.** The count of active Interests that link the Unit.
-3. **Unit view tracking in the portal.** `track_views` is on, but the portal reads documents through `frappe.client.get`, which does not write View Log entries. A small "record view" API call is needed.
+**Live acceptance is still required after Frappe Cloud deploy:** create an Owner Lead, complete an Initial Qualification Call, create one Owner Price Unit and one Agent Pricing Unit, collect private evidence, verify the Buyer match gate, observe the 3-month next action/Event, and open a Unit from the portal to verify its View/Buyer cards.
 
-The project's working rule is to agree on an editable Mermaid design first, then implement.
+The project's working rule remains to agree on an editable Mermaid design first, then implement.

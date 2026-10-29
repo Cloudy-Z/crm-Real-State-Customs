@@ -25,6 +25,21 @@ UNIT_FINAL_STATUSES = ("Sold", "Rented")
 
 def unit_final_status_for(interest):
     return "Rented" if interest.get("deal_type") == DEAL_RENT else "Sold"
+
+
+def _refresh_owner_unit_insights(unit_name):
+    """Keep Owner rollups secondary to, never a blocker of, Buyer closing."""
+    try:
+        from real_estate_crm_customs.owner_workflow import safely_refresh_unit_interest_counters
+
+        safely_refresh_unit_interest_counters(unit_name)
+    except Exception:
+        try:
+            frappe.log_error(frappe.get_traceback(), "Owner rollup refresh after Buyer closing failed")
+        except Exception:
+            pass
+
+
 from real_estate_crm_customs.workflow_context import (
     creation_context_mode,
     interest_creation_context,
@@ -693,6 +708,9 @@ def begin_interest_closing(interest_name, action=None):
         interest.last_transition_by = frappe.session.user
         interest.save(ignore_permissions=True)
     _set_unit_closing_state(unit.name, status="Reserved", closing_interest=interest.name, sold_interest=None)
+    refresh_owner = globals().get("_refresh_owner_unit_insights")
+    if refresh_owner:
+        refresh_owner(unit.name)
     create_transition(
         interest,
         from_status,
@@ -767,6 +785,9 @@ def finalize_interest_contract(interest_name, contract_reference, contract_signe
         closing_interest=interest.name,
         sold_interest=interest.name,
     )
+    refresh_owner = globals().get("_refresh_owner_unit_insights")
+    if refresh_owner:
+        refresh_owner(unit.name)
     create_transition(
         interest,
         from_status,
@@ -812,6 +833,9 @@ def abandon_interest_closing(interest_name, target="Negotiating", action=None, r
         interest.last_transition_by = frappe.session.user
         interest.save(ignore_permissions=True)
     _set_unit_closing_state(unit.name, status="Available", closing_interest=None, sold_interest=None)
+    refresh_owner = globals().get("_refresh_owner_unit_insights")
+    if refresh_owner:
+        refresh_owner(unit.name)
     create_transition(
         interest,
         from_status,
@@ -937,6 +961,12 @@ def migrate_action_interest_scopes():
     action_names = frappe.get_all("Lead Action Execution", pluck="name", limit_page_length=0)
     for index, action_name in enumerate(action_names):
         action = frappe.get_doc("Lead Action Execution", action_name)
+        # Owner acquisition/listing actions deliberately use a Unit scope and
+        # never carry Buyer Interest scopes. Do not infer an Interest from the
+        # same Unit during every after-migrate reconciliation.
+        if action.get("scope_type") == "Unit":
+            skipped += 1
+            continue
         if action.get("interest_scopes"):
             try:
                 action_interest_names(action)

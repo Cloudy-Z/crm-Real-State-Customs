@@ -4,7 +4,7 @@ This file is the working memory of the project. Read it fully before you change 
 
 The human-readable explanation of the same system is in [`docs/TECHNICAL_GUIDE.md`](docs/TECHNICAL_GUIDE.md). Editable Mermaid diagrams are in [`docs/diagrams/`](docs/diagrams/).
 
-> Snapshot: written 28 Oct 2026 at backend `main` `fcc458c` and CRM fork `develop` `1810fd3c`. Test baseline at that point: **137 backend tests OK, 159/159 frontend tests (11 files)**. If the code and this file disagree, the code wins. Fix this file in the same commit.
+> Snapshot: updated 29 Oct 2026 for the Owner Lead / Unit listing workflow release. Current verification baseline: **144 backend tests OK, 159/159 frontend tests (11 files)**. If the code and this file disagree, the code wins. Fix this file in the same commit.
 
 ---
 
@@ -43,7 +43,7 @@ Breaking any of these has already caused production incidents or violates an exp
 1. **`party_type` is the only Lead role authority.** Values are `Buyer` or `Owner`. `custom_type` and `lead_type` were removed; they may only appear inside migration/repair code. Use `party_roles.py` helpers (`normalize_party_role`, `is_owner_role`, `OWNER_ROLE`), never string literals scattered in code. Legacy `Seller` input is normalised to `Owner`.
 2. **Unit ownership is Owner-only.** `Real Estate Unit.owner_lead` may only point to an Owner Lead. A Buyer is linked to Units **only through `Lead Interest`**. A Lead that owns Units cannot change its role, and a Buyer that has Interests cannot change its role.
 3. **`Lead Interest` is the workflow authority.** Each Interest has its own `workflow_status`, transitions (`Lead Interest Transition`), and lock. The child table `Lead Interested Unit` is a dual-write mirror for old screens. Do not read state from it, and do not promote it back to authority.
-4. **Lead `status` is a read-only rollup.** Agents never set it, and a Property Setter makes it read-only. It is recomputed from Interests by `_rollup_target()` in `interest_workflow.py`. The allowed Lead statuses are exactly: `New`, `Fresh Lead`, `Requested`, `Offer Sent`, `Negotiating`, `Closing`, `Closed Won`. Do not add statuses that the cycle does not use.
+4. **Lead `status` is a read-only rollup.** Agents never set it. Buyer status is recomputed from Interests by `_rollup_target()` in `interest_workflow.py`; Owner status is derived only from owned Units by `reconcile_owner_lead_rollup()` in `owner_workflow.py`. Used statuses are `New`, `Fresh Lead`, `Requested`, `Pricing`, `Documents Pending`, `Listed`, `Offer Sent`, `Negotiating`, `Closing`, and `Closed Won`. Never use a Buyer Interest to drive an Owner Lead or an Owner Unit to drive a Buyer Lead.
 5. **Qualification is separate from status.** `interest_status` (`Interested` / `Not Interested`) is read-only for agents. Only a Sales Manager or System Manager can change it, through `requalify_lead`.
 6. **Interests are created only by the workflow.** Direct inserts are blocked unless the code runs inside `interest_creation_context()` (`workflow_context.py`). Do not add "Add Interest" buttons outside the action cycle.
 7. **One popup, one atomic submit.** A Buyer action is entered in `LeadUnifiedActionDialog.vue`. Its fields are revealed in sequence and saved with **one** call, `submit_lead_action_bundle`. Agents must be able to fill every requirement field **before** choosing the Next Action. Next Action is validated only at final submit, and only when the workflow requires it. Never remove that final validation.
@@ -58,8 +58,9 @@ Breaking any of these has already caused production incidents or violates an exp
     - Commission = Total Price Net × 2.5%
     - Total Gross = Paid + (Over Net + Property Taxes + Commission) + Remaining
     - If Over Price is entered as gross (`over_is_gross`): Over Net = (Over Price − 5% × Paid − 2.5% × Remaining) / 1.025
-14. **Migrations are additive and idempotent.** Never drop columns or delete user data in a patch. Never call `frappe.db.commit()` in code reachable from `after_migrate`. Wrap per-record repair in savepoints and log skipped records instead of failing the whole migrate.
-15. **The user's process:** for complex workflow or data changes, first deliver a design with **editable Mermaid** diagrams. Get approval, then code. Review every affected DocType JSON, controller, API, patch and UI **before** editing to avoid repeated field/schema failures.
+14. **Owner listing eligibility is server-enforced.** A Unit linked to an Owner must be `Listed` (or in the 14-day resolution grace after Verification Due), available, correctly priced, and have accepted **privately uploaded** ownership/ID evidence plus a signed, privately uploaded listing agreement before new Buyer matching or direct Interest binding. Primary Units and historical Units without an Owner listing state are unaffected.
+15. **Migrations are additive and idempotent.** Never drop columns or delete user data in a patch. Never call `frappe.db.commit()` in code reachable from `after_migrate`. Wrap per-record repair in savepoints and log skipped records instead of failing the whole migrate.
+16. **The user's process:** for complex workflow or data changes, first deliver a design with **editable Mermaid** diagrams. Get approval, then code. Review every affected DocType JSON, controller, API, patch and UI **before** editing to avoid repeated field/schema failures.
 
 ## 4. Repository map (backend)
 
@@ -67,7 +68,8 @@ Breaking any of these has already caused production incidents or violates an exp
 real_estate_crm_customs/
   hooks.py                 after_install/after_migrate, scheduler, doc_events, fixtures
   api.py                   ~4100 lines: whitelisted API, action engine, Smart Match, guards
-  interest_workflow.py     Interest lifecycle: ALLOWED_TRANSITIONS, locks, closing, Lead rollup, legacy promotion
+  interest_workflow.py     Interest lifecycle: ALLOWED_TRANSITIONS, locks, closing, Buyer Lead rollup, legacy promotion
+  owner_workflow.py        Owner Lead/Unit acquisition, pricing, documents, listing gate, view/count APIs, daily verification
   requirement_policy.py    pure validators: currency/presence flags, delivery date, scope, deal type, listing purposes
   party_roles.py           canonical role helpers (Buyer/Owner, legacy Seller alias)
   lead_role_migration.py   role repair, saved-view filter/route repair, enforce_canonical_party_role_schema
@@ -80,8 +82,8 @@ real_estate_crm_customs/
   fixtures/custom_field.json   CRM Lead + User custom fields (synced by fixtures)
   patches.txt              [pre_model_sync] / [post_model_sync] sections (both headers required)
   patches/v16_0/*.py       additive, idempotent patches
-  real_estate_crm_customs/doctype/<18 DocTypes>   JSON + same-name .py controller each
-tests/                     11 pure-Python test modules (no bench needed)
+  real_estate_crm_customs/doctype/<19 DocTypes>   JSON + same-name .py controller each
+tests/                     12 pure-Python test modules (no bench needed)
 docs/                      TECHNICAL_GUIDE.md, diagrams/*.mmd, proposals/
 tools/compound_import/     workbook builder/verifier for Compound + Phase + Amenity import
 ```
@@ -90,13 +92,13 @@ Key DocTypes (all in module `Real Estate CRM Customs`):
 
 | DocType | Notes |
 |---|---|
-| `Real Estate Unit` | `allow_import`, `track_changes`, `track_views`. Required: unit_number, project, inventory_type, listing_purpose, area_uom, bedrooms, bathrooms, status. Read-only projections: master_compound, destination, developer, sku, financial totals, delivery_status, closing_interest, sold_interest. Child: `Unit Scheduled Showing`. |
+| `Real Estate Unit` | `allow_import`, `track_changes`, `track_views`. Owner listing fields are workflow-controlled: pricing method/status, proposal, documents, agreement, verification dates and Buyer counters. Read-only projections include master compound, destination, developer, SKU, financial totals, delivery status, closing links and counters. Children: `Unit Scheduled Showing`, `Real Estate Unit Document`. |
 | `Real Estate Project` (Compound) | `allow_import`, `track_changes`. `record_type` Compound/Phase. A Phase inherits Developer and Destination from `parent_compound`. Status is optional. Old `phases` child table is legacy and read-only. Child: `Real Estate Compound Amenity`, `Real Estate Compound Unit Type`. |
 | `Property Developer` | Only `developer_name` is required. `founded_year` is an optional **Date** (label "Founded In"). Founders child rows are optional; empty rows are dropped. |
 | `Real Estate Destination`, `Real Estate Amenity`, `Real Estate Unit Type`, `Real Estate Unit Category` | Importable masters. Unit Type links to a Unit Category. |
 | `Lead Interest` | `track_changes`. Required: lead, record_type, category, deal_type, workflow_status. Holds the requirement snapshot, contract fields, replacement links, and deletion-request fields. |
 | `Lead Interest Transition`, `Lead Status Transition` | Audit logs. Never importable. |
-| `Lead Action Execution` + child `Lead Action Interest Scope` | Action records. `scope_type` is Lead, Interest or Batch. `client_request_id` makes submits idempotent. `seller_lead` is labelled "Related Owner Lead" (fieldname kept for compatibility). |
+| `Lead Action Execution` + child `Lead Action Interest Scope` | Action records. `scope_type` is Lead, Interest, Batch or Unit. Buyer scope uses Interests; Owner Unit actions never carry Interest scopes. `client_request_id` makes submits idempotent. `seller_lead` is labelled "Related Owner Lead" (fieldname kept for compatibility). |
 | `Lead Interested Unit` | Legacy mirror child table on CRM Lead. |
 
 Import policy: the 7 masters are importable. Workflow and audit DocTypes (Interest, Action, Transitions, Scopes) are **not** importable, and a schema-contract test enforces this.
@@ -110,7 +112,7 @@ Import policy: the 7 masters are importable. Workflow and audit DocTypes (Intere
 - WhatsApp: the agent types a subject, the system records it (`record_whatsapp_subject`), and then opens the chat.
 
 ### 5.2 Allowed Lead-level actions (`_allowed_action_definitions`, api.py)
-- **Owner Leads get no guided actions yet** (the function returns an empty list). See section 11.
+- **Owner Leads use the independent `owner_workflow.py` action service**, not the Buyer action engine. Its Lead-level actions are Initial Qualification Call, Add Property, General Follow-up, and Explore Meeting; Unit-level actions are Agent Pricing, Price Decision, Listing Documents and Availability Verification.
 - Buyer that is not yet Interested: only **Call → Initial Qualification**.
 - Interested Buyer: **Add Interest** (Requirements Discovery), **Call** (General Follow-up), **Meeting** (Explore Meeting), plus **Send Offer** (Batch) when there are Matched Interests with no open action.
 
@@ -156,11 +158,11 @@ Matched alone does not move the Lead. A rejected offer therefore drops the Lead 
 - `begin_interest_closing`: allowed only from Offer Accepted, Negotiating or Shown - Interested, and only when the Unit is Available. It locks the **Unit first, then the Interest**, sets the Unit to `Reserved`, and sets `closing_interest`.
 - `finalize_interest_contract`: requires the contract reference and signed date. It sets the Interest to Closed Won and the Unit to `Sold` (Buy) or `Rented` (Rent), and sets `sold_interest`. A replay with the same values is a no-op; a replay with different values raises an error.
 - `abandon_interest_closing(target="Negotiating" | "Rejected")`: returns the Unit to `Available` and moves the Interest to the target. Any other target is rejected.
-- `release_rented_unit` (manager only): moves a Rented Unit back to Available ("Return to Market").
+- `release_rented_unit` (manager only): moves a Rented Unit back to Available but marks its Owner listing Verification Due and creates/reconciles an Owner confirmation action before it becomes Buyer-matchable again.
 - Agents cannot set Unit status to Reserved, Sold or Rented by hand.
 
 ### 5.8 Smart Match (`get_smart_matched_units` → `get_available_units_for_selection` → `_score_property_match`)
-- **Hard filters:** status Available; `listing_purpose` fits the deal type (`listing_purposes_for_deal`); inventory type within the search scope (`Resale | Primary | Both`); Rent searches Resale only; a Compound filter includes its Phases through `master_compound`.
+- **Hard filters:** status Available; owned Units must pass `unit_is_buyer_eligible` (Listed or limited Verification Due grace); `listing_purpose` fits the deal type (`listing_purposes_for_deal`); inventory type within the search scope (`Resale | Primary | Both`); Rent searches Resale only; a Compound filter includes its Phases through `master_compound`.
 - **Relation validation:** the Compound must belong to the selected Destination and Developer, and the Unit Type must belong to the selected Unit Category.
 - **Weights:** Destination 30, Budget 30, Unit Type 22, Compound 16, Developer 12, Delivery 12, Finishing 10. Score = weighted sum / applicable weight × 100.
 - **Budget bands:** within budget 1.0; up to 10% over 0.75; up to 20% over 0.45; more 0. Rent deals compare the monthly rent budget.
@@ -170,7 +172,7 @@ Matched alone does not move the Lead. A rejected offer therefore drops the Lead 
 - "Manager" means `System Manager` or `Sales Manager` (`_is_manager`).
 - Manager-only actions: `requalify_lead`, `review_interest_deletion`, `release_rented_unit`.
 - Deleting an Interest goes through a request (`request_interest_deletion` creates a ToDo), followed by a manager decision.
-- `_lock_lead_workflow` uses `SELECT ... FOR UPDATE` on the Lead row to serialise workflow writes.
+- `_lock_lead_workflow` uses `SELECT ... FOR UPDATE` on the Lead row to serialise Buyer workflow writes. `owner_workflow._lock_lead` / `_lock_unit` provide the same serialization for Owner actions.
 
 ### 5.10 Retired endpoints
 These still exist only to throw "Use the current scoped workflow action form": `schedule_next_action`, `log_meeting_result`, `send_offer_to_lead`, `mark_lead_negotiating`, `mark_unit_interest_lost`. Do not revive them. All Buyer writes go through `plan_lead_action`, `start_lead_action`, `complete_lead_action`, `cancel_lead_action` and `submit_lead_action_bundle`.
@@ -205,6 +207,7 @@ real_estate_crm_customs.patches.v16_0.repair_legacy_lead_view_schema
 real_estate_crm_customs.patches.v16_0.closing_requirements_and_meetings
 real_estate_crm_customs.patches.v16_0.compound_phases_and_unit_categories
 real_estate_crm_customs.patches.v16_0.rename_seller_to_owner_and_rentals
+real_estate_crm_customs.patches.v16_0.owner_unit_listing_workflow
 ```
 
 A Frappe patch runs once per site (it is recorded in `Patch Log`). To run new logic, add a **new** patch line. Do not edit an old patch and expect it to run again.
@@ -284,16 +287,20 @@ There is no local bench or site database in the agent sandbox. Real migrations h
 | `A Developer requires at least one founder.` | Controller rule plus required child field | Only Developer Name is required; empty founder rows are dropped. |
 | Requirement fields could not be typed until Next Action was chosen | Link dropdown buttons inside `<form>` had no `type`, so they defaulted to `submit` and triggered final validation | `type="button"` on Autocomplete buttons; regression tests in `autocompleteFormSafety.test.js`. |
 | `Cannot read properties of null (reading 'action_type')` on "Start now" (`Lead.vue`) | The page read the planned action from a response that was still empty when "Do now" ran | Fixed in the fork (`6a6ab4e3`, `e575b11e`, `eaef924e`), later replaced by the atomic single-submit bundle (backend `4568f36`). Never dereference an optional action result. |
-| Unused Lead statuses still offered after deleting all Leads | `CRM Lead Status` records (including upstream CRM defaults) remain until removed explicitly | Removed in `e332497` / `7d3da55`. Today `ensure_real_estate_lead_statuses` upserts exactly the 7 cycle statuses on every migrate. To retire a status, migrate its references first, then delete it in a patch. |
+| Unused Lead statuses still offered after deleting all Leads | `CRM Lead Status` records (including upstream CRM defaults) remain until removed explicitly | Migrate references before retiring a status. `ensure_real_estate_lead_statuses` upserts every used Buyer and Owner status, including Pricing, Documents Pending and Listed. |
 
 General diagnosis method: find the exact lifecycle phase that fails (patch discovery, DocType sync, fixtures, `after_migrate`, request). Read the server traceback in Frappe Cloud → Site → Error Logs, or in the browser Network tab (`exc` field). Trace every input that reaches the failing validator, then reproduce it in a pure test before fixing.
 
-## 11. Open work (not implemented yet)
+## 11. Owner workflow — implemented contract
 
-- **Owner guided workflow** (calls, pricing by owner or by agent, listing, 3-month availability verification): the design is at `docs/proposals/owner_unit_workflow/`. It is **awaiting user approval** of its pending decisions. Owner Leads currently have no guided actions.
-- **Unit interested-Buyer counter** on the Unit form (count of active `Lead Interest` rows linking the Unit). Not built.
-- **Unit view tracking in the portal**: `track_views` is enabled, but the portal loads documents with `frappe.client.get`, which does **not** write `View Log`. Only Desk `frappe.desk.form.load` does. A small whitelisted "record view" call is needed.
-- The user prefers editable Mermaid design → approval → implementation for these items.
+- **Service:** `owner_workflow.py` is intentionally separate from Buyer `Lead Interest` lifecycle. Both write `Lead Action Execution`, but Owner Unit actions use `scope_type = Unit` and are excluded from Interest-scope migration.
+- **Cycle:** Initial qualification call → full sectioned Add Property intake → either Agent Pricing → Price Decision or Owner Price → Documents Collection → Listed → recurring Availability Verification every three months. Notes remain optional; each completed row creates at most one successor action/Event.
+- **Evidence gate:** Listing requires a sale/rent price appropriate to Listing Purpose, ownership proof, Owner ID/passport, agreement type and signed date. Optional uploaded evidence must be private. No scheduler marks a Unit available by itself.
+- **Visibility:** `unit_is_buyer_eligible()` is used by Smart Match, manual Unit selection and direct Buyer binding. `LeadInterest.validate` is the final backstop.
+- **Buyer linkage:** Buyer Owner Meetings and Showings continue to create their Owner Lead/Unit projections. Buyer closing and lease-release events refresh Owner rollups without changing Buyer authority.
+- **Quarterly job:** `run_daily_listing_verification` changes a due Listed Unit to Verification Due, creates exactly one open verification action/Event, and logs a manager-visible comment after seven overdue days. After 14 days it is no longer matched to newly created Buyer Interests.
+- **Insights:** `Lead Interest` hooks refresh distinct active/total Buyer counts on each linked Unit. Portal Unit forms call `log_unit_view` because `frappe.client.get` does not write View Log; the form displays view and Buyer counters.
+- **Manager recovery:** Only a manager may reactivate Withdrawn Units or return a Rented Unit to market; the latter requires fresh Owner verification.
 
 ## 12. Working style expected by the user
 

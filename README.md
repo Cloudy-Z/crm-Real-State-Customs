@@ -11,7 +11,7 @@ This app owns the data model, business rules, workflow engine, Smart Match, migr
 | [docs/TECHNICAL_GUIDE.md](docs/TECHNICAL_GUIDE.md) | Full technical guide for people: architecture, data model, Buyer workflow, Interest lifecycle, closing, Smart Match, Compounds and Phases, Sale/Rent, APIs, migrations, testing, deployment, troubleshooting. |
 | [AGENTS.md](AGENTS.md) | Rulebook and knowledge base for AI coding agents: invariants, file map, how to make changes safely, verification commands, incident lessons. |
 | [docs/diagrams/](docs/diagrams/) | Editable Mermaid sources for every diagram. |
-| [docs/proposals/owner_unit_workflow/](docs/proposals/owner_unit_workflow/seller_unit_workflow_design.md) | Proposed guided Owner/Unit workflow (awaiting approval, not implemented). |
+| [docs/proposals/owner_unit_workflow/](docs/proposals/owner_unit_workflow/seller_unit_workflow_design.md) | Implemented Owner Lead/Unit listing workflow contract and editable Mermaid diagrams. |
 | [tools/compound_import/](tools/compound_import/IMPORT_GUIDE.md) | Converter and verifier for importing Destinations, Developers, Amenities, Compounds and Phases from a spreadsheet. |
 | [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md) | Early implementation notes (historical; the technical guide is current). |
 
@@ -24,6 +24,8 @@ This app owns the data model, business rules, workflow engine, Smart Match, migr
 - **Inventory masters.** Units, Compounds (with Phases), Developers, Destinations, Unit Categories, Unit Types and Amenities, each with portal list and form pages and import support.
 - **Smart Match.** Ranks available Units against a requirement with explainable scores, Resale/Primary/Both scope, Buy/Rent deal type and dependent filters.
 - **Sale and Rent.** Units are listed For Sale, For Rent or both. Buyer Interests are Buy or Rent.
+- **Guided Owner listing workflow.** Initial qualification, full Unit intake, Owner-vs-agent pricing, private ownership/ID/agreement evidence, Listed gate and a three-month availability verification.
+- **Owner listing insights.** A Unit tracks changes/views and shows distinct active and total linked-Buyer counts in the portal.
 
 ## Requirements
 
